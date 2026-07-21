@@ -1,0 +1,31 @@
+# 离线配置：无 API key / 无网络即可跑通 ingest→query（仅验证链路，非生产质量）。
+# 用确定性本地 embedder + 占位 LLM，角色等同 NoopReranker。生产请用 default.yaml。
+
+ingest:
+  loader: auto
+  chunker: fixed_len
+  chunk_size: 300
+  chunk_overlap: 50
+
+embedding:
+  impl: local_hash        # 确定性词面哈希向量，仅离线用
+  dim: 256
+
+store:
+  vector: memory
+  metadata: memory
+  path: data/processed
+
+retrieval:
+  impl: vector_only
+  top_k: 3
+
+rerank:
+  impl: noop
+
+generation:
+  impl: default
+  max_context_chunks: 3
+
+llm:
+  impl: echo              # 占位回显，不产真实法律意见

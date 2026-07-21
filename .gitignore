@@ -1,0 +1,29 @@
+# 常见临时/系统文件
+.DS_Store
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# 环境与密钥
+.env
+
+# 数据（大文件不入库，只保留目录结构）
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# 本地向量/元数据落盘
+*.db
+*.sqlite3

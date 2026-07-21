@@ -1,0 +1,31 @@
+# LegalRAG 默认配置（消融只改这里，主流程零改动 —— SPEC §4.3）
+# 每个组件名对应 core/registry 里注册的实现变体。
+
+ingest:
+  loader: auto            # 按扩展名分派 pdf/docx/txt
+  chunker: fixed_len      # [MVP] 固定长度+overlap；[v0.1] 可切 clause
+  chunk_size: 512
+  chunk_overlap: 64
+
+embedding:
+  impl: bge_m3_api        # [MVP] dense；sparse 字段 v0.1 启用
+  dim: 1024
+
+store:
+  vector: memory          # [MVP] 内存实现，接口与 Milvus 一致；量大再切
+  metadata: memory        # [MVP] 内存/占位；v0.2 切 postgres
+  path: data/processed    # 内存实现落盘目录（跨 CLI 调用持久化）
+
+retrieval:
+  impl: vector_only       # [MVP] 纯向量单阶段；[v0.1] hybrid_rerank
+  top_k: 5
+
+rerank:
+  impl: noop              # [MVP] 占位保持链路形状；[v0.1] bge_api
+
+generation:
+  impl: default
+  max_context_chunks: 5
+
+llm:
+  impl: qwen              # [MVP] Qwen/DeepSeek API；离线/测试可切 echo
