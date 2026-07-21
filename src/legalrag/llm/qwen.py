@@ -1,4 +1,4 @@
-"""Qwen/DeepSeek API 实现（SPEC §1，OpenAI 兼容 chat/completions 协议）。"""
+"""Qwen/DeepSeek API 实现（OpenAI 兼容 chat/completions 协议）。"""
 
 from __future__ import annotations
 

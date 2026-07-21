@@ -1,4 +1,4 @@
-"""MetadataStore：保存 chunk 元数据、提供 ACL 策略（SPEC §4.2）。
+"""MetadataStore：保存 chunk 元数据、提供 ACL 策略。
 
 MVP 内存实现 + JSON 落盘；ACL 为占位（返回 None），v0.2 接 PostgresStore 与 acl_policies。
 """

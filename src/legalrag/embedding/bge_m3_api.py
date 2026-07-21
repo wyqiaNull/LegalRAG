@@ -1,4 +1,4 @@
-"""bge-m3 API 实现（SPEC §1，走 API，无 GPU 退路）。
+"""bge-m3 API 实现（走 API，无 GPU 退路）。
 
 调用 OpenAI 兼容的 /embeddings 端点取 dense 向量。sparse 预留，v0.1 启用。
 """

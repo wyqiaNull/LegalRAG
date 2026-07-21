@@ -1,4 +1,4 @@
-"""生成器（SPEC §6，FR-4 MVP）—— context 拼接 → LLM → Answer。
+"""生成器 —— context 拼接 → LLM → Answer。
 
 MVP 不做引用装配与一致性校验（citations 留空），这些到 v0.2 补齐。
 """

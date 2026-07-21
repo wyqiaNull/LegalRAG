@@ -1,6 +1,6 @@
-"""元数据 schema 组装（SPEC §5，字段对齐 tech-design §2.1）。
+"""元数据 schema 组装。
 
-摄取时一次建全 —— 禁止事后补字段（哲学六）。权限/版本字段 MVP 用安全默认值，
+摄取时一次建全 —— 禁止事后补字段。权限/版本字段 MVP 用安全默认值，
 结构就位，v0.2 直接启用过滤逻辑，无需重建索引。
 """
 
@@ -17,7 +17,7 @@ _DOC_NS = uuid.UUID("00000000-0000-0000-0000-00000000face")
 
 
 def content_hash(text: str) -> str:
-    """正文 sha256（FR-6 增量更新用；MVP 就落库，零成本预留）。"""
+    """正文 sha256（增量更新用；MVP 就落库，零成本预留）。"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 

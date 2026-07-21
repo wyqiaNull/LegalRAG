@@ -1,4 +1,4 @@
-"""Rerank 能力层（SPEC §3）。
+"""Rerank 能力层。
 
 TODO[v0.1]：bge_api.py —— 真实 cross-encoder 精排。
 """

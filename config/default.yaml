@@ -1,4 +1,4 @@
-# LegalRAG 默认配置（消融只改这里，主流程零改动 —— SPEC §4.3）
+# LegalRAG 默认配置（消融只改这里，主流程零改动）
 # 每个组件名对应 core/registry 里注册的实现变体。
 
 ingest:

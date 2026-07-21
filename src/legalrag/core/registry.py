@@ -1,8 +1,8 @@
-"""组件注册表 / 工厂（SPEC §4.3）—— 配置驱动消融。
+"""组件注册表 / 工厂 —— 配置驱动消融。
 
 能力层实现在各自模块用 ``register(kind, name, cls)`` 登记；编排层只用
 ``build(kind, name, **kwargs)`` 按配置里的实现名拿实例，不 import 具体类。
-换组件 = 改 config 里的名字，主流程零改动（哲学五）。
+换组件 = 改 config 里的名字，主流程零改动。
 """
 
 from __future__ import annotations

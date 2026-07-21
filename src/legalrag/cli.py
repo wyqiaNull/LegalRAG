@@ -1,8 +1,8 @@
-"""CLI 入口与 MVP 组装根（SPEC §3/§9）。
+"""CLI 入口与 MVP 组装根。
 
 编排层 v0.3 才独立（agent/），MVP 阶段在此线性串起 ingest→检索→精排→生成。
 本模块是**组装根**：集中 import 各能力实现以触发注册，再按 config 经 registry 注入，
-主流程不 import 任何具体实现（哲学五）。
+主流程不 import 任何具体实现。
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""摄取能力层（SPEC §3）：load → chunk → meta → embed → store。
+"""摄取能力层：load → chunk → meta → embed → store。
 
 导入本包即注册全部具体 loader / chunker。
 """

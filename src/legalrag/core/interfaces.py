@@ -1,10 +1,10 @@
-"""抽象接口（SPEC §4.2）—— 所有签名 MVP 定稿，实现按版本后补。
+"""抽象接口 —— 所有签名 MVP 定稿，实现按版本后补。
 
-预留扩展点（哲学四）：
+预留扩展点：
 - ``Retriever.search`` 恒带 ``filters``（MVP 传空 dict）—— v0.2 加权限过滤时调用方零改动；
 - ``Embedder.embed`` 恒返 ``EmbedResult(dense, sparse)``（MVP sparse=None）—— v0.1 启用稀疏时下游零改动。
 
-能力层实现均通过 ``core.registry`` 注入，互不直接 import（哲学五）。
+能力层实现均通过 ``core.registry`` 注入，互不直接 import。
 """
 
 from __future__ import annotations

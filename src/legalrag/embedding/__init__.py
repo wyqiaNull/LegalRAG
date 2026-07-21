@@ -1,4 +1,4 @@
-"""Embedding 能力层（SPEC §3）。
+"""Embedding 能力层。
 
 导入本包即注册全部实现：bge_m3_api（生产）/ local_hash（离线测试）。
 """

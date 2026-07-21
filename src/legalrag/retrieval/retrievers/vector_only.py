@@ -1,4 +1,4 @@
-"""纯向量单阶段检索（SPEC §6，FR-3 MVP）。
+"""纯向量单阶段检索。
 
 query 文本 → 向量 → 向量库 ANN。filters 参数恒在，MVP 传空（v0.2 塞权限/版本条件）。
 双阶段混合检索见 v0.1 的 hybrid_rerank.py。

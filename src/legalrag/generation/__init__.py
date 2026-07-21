@@ -1,4 +1,4 @@
-"""生成能力层（SPEC §3）。导入即注册默认生成器。"""
+"""生成能力层。导入即注册默认生成器。"""
 
 from __future__ import annotations
 

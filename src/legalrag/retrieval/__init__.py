@@ -1,4 +1,4 @@
-"""检索能力层（SPEC §3）。"""
+"""检索能力层。"""
 
 from __future__ import annotations
 

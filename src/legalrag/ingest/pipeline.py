@@ -1,4 +1,4 @@
-"""摄取编排（SPEC §6，FR-1 MVP）：load → chunk → meta → embed → store。
+"""摄取编排：load → chunk → meta → embed → store。
 
 组件由调用方（cli 组装根）经 registry 注入，pipeline 只负责串流程、不 import 具体实现。
 """

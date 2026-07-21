@@ -1,4 +1,4 @@
-"""配置加载：pydantic-settings 合并 env + config/*.yaml（SPEC §1）。
+"""配置加载：pydantic-settings 合并 env + config/*.yaml。
 
 - 密钥类（API base/key/model）从 ``.env`` / 环境变量读 —— 见 ``Secrets``；
 - 组件选择与参数从 yaml 读 —— 见 ``AppConfig``，消融只改 yaml。

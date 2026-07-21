@@ -1,4 +1,4 @@
-"""VectorStore：标量过滤 + ANN 一体（SPEC §4.2）。
+"""VectorStore：标量过滤 + ANN 一体。
 
 MVP 提供内存实现 MemoryVectorStore，接口与 Milvus 对齐（upsert / 带 filter 的 search），
 并落盘到 JSON 以便 ingest 与 query 两次独立 CLI 调用间持久化。量大再切 Milvus，主流程零改动。

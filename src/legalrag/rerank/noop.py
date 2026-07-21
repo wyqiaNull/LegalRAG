@@ -1,4 +1,4 @@
-"""NoopReranker（SPEC §3）—— 占位，原样返回候选并截断，保持链路形状。
+"""NoopReranker —— 占位，原样返回候选并截断，保持链路形状。
 
 真实 cross-encoder 重排见 v0.1 的 bge_api.py。
 """

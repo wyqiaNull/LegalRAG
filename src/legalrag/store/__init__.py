@@ -1,4 +1,4 @@
-"""存储层（SPEC §3）。导入即注册内存实现。"""
+"""存储层。导入即注册内存实现。"""
 
 from __future__ import annotations
 
