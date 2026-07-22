@@ -38,3 +38,7 @@ conversation:
   resolver: llm
   history_turns: 4
   path: ""
+
+governance:
+  permissions_enabled: false
+  permission_filter: acl

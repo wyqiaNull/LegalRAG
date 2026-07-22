@@ -130,6 +130,8 @@ def _default_acl_policies() -> list[AclPolicyCfg]:
 
 class GovernanceCfg(BaseModel):
     model_config = {"extra": "allow"}
+    permissions_enabled: bool = False
+    permission_filter: str = "acl"
     acl_policies: list[AclPolicyCfg] = Field(default_factory=_default_acl_policies)
 
 

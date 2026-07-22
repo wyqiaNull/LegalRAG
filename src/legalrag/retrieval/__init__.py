@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from . import retrievers  # noqa: F401 —— 触发注册副作用
+from . import permission, retrievers  # noqa: F401 —— 触发注册副作用

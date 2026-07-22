@@ -18,6 +18,7 @@ from . import agent, embedding, generation, llm, rerank, retrieval, store  # noq
 from .agent.session import JsonConversationStore
 from .config.settings import Settings, load_settings
 from .core import registry
+from .core.errors import ConfigError
 from .core.models import Answer, Candidate, Confidentiality, DocType, Identity, Query
 from .ingest import IngestPipeline  # 触发 ingest 包注册
 from .ingest.stats import LengthSummary, analyze_chunks
@@ -60,6 +61,13 @@ class Components:
                 for policy in cfg.governance.acl_policies
             ],
         )
+        self.permission_filter = None
+        if cfg.governance.permissions_enabled:
+            self.permission_filter = _build(
+                "permission_filter",
+                cfg.governance.permission_filter,
+                metadata_store=self.metadata_store,
+            )
         self.llm = _build(
             "llm",
             cfg.llm.impl,
@@ -137,8 +145,11 @@ def run_query_details(
     text: str,
     settings: Settings | None = None,
     session_id: str | None = None,
+    identity: Identity | None = None,
 ) -> QueryExecution:
     settings = settings or load_settings()
+    if settings.config.governance.permissions_enabled and identity is None:
+        raise ConfigError("权限过滤启用时必须提供查询身份")
     comp = Components(settings)
     cfg = settings.config.retrieval
     retrieval_question = text
@@ -148,10 +159,13 @@ def run_query_details(
     query = Query(
         text=retrieval_question,
         session_id=session_id,
-        identity=Identity(),
+        identity=identity or Identity(),
         top_k=cfg.top_k,
     )
-    candidates = comp.retriever.search(query, None, cfg.top_n)
+    filters = None
+    if comp.permission_filter is not None:
+        filters = comp.permission_filter.build(query.identity)
+    candidates = comp.retriever.search(query, filters, cfg.top_n)
     candidates = comp.reranker.rerank(query, candidates, cfg.top_k)
     answer = comp.generator.generate(query, candidates)
     if session_id and comp.coreference is not None:
@@ -163,8 +177,9 @@ def run_query(
     text: str,
     settings: Settings | None = None,
     session_id: str | None = None,
+    identity: Identity | None = None,
 ) -> Answer:
-    return run_query_details(text, settings, session_id).answer
+    return run_query_details(text, settings, session_id, identity).answer
 
 
 def _input_documents(path: str) -> list[str]:
@@ -247,10 +262,39 @@ def query(
     config: str = typer.Option(None, "--config", "-c", help="配置文件路径"),
     session_id: str | None = typer.Option(None, "--session-id", help="多轮会话 ID"),
     show_hits: bool = typer.Option(False, "--show-hits", help="显示检索候选与分数"),
+    user_id: str = typer.Option("anonymous", "--user-id", help="用户 ID"),
+    role: str | None = typer.Option(None, "--role", help="用户角色"),
+    tenant_id: str | None = typer.Option(None, "--tenant-id", help="所属租户"),
+    allowed_confidentiality: list[Confidentiality] = typer.Option(
+        [],
+        "--allowed-confidentiality",
+        help="进一步限制可见密级，可重复指定",
+    ),
 ) -> None:
     """检索并生成答案。"""
     settings = load_settings(config)
-    result = run_query_details(text, settings, session_id)
+    permissions_enabled = settings.config.governance.permissions_enabled
+    if permissions_enabled and not role:
+        raise typer.BadParameter(
+            "权限过滤启用时必须提供用户角色", param_hint="--role"
+        )
+    if permissions_enabled and not tenant_id:
+        raise typer.BadParameter(
+            "权限过滤启用时必须提供所属租户", param_hint="--tenant-id"
+        )
+    identity = None
+    if role or tenant_id or allowed_confidentiality:
+        identity = Identity(
+            user_id=user_id,
+            role=role or "*",
+            tenant_id=tenant_id or "default",
+            allowed_confidentiality=(
+                list(dict.fromkeys(allowed_confidentiality))
+                if allowed_confidentiality
+                else list(Confidentiality)
+            ),
+        )
+    result = run_query_details(text, settings, session_id, identity)
     answer = result.answer
     typer.echo(answer.text)
     if answer.retrieved_chunk_ids:

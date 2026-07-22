@@ -1,7 +1,6 @@
 """VectorStore：标量过滤 + ANN 一体。
 
-MVP 提供内存实现 MemoryVectorStore，接口与 Milvus 对齐（upsert / 带 filter 的 search），
-并落盘到 JSON 以便 ingest 与 query 两次独立 CLI 调用间持久化。量大再切 Milvus，主流程零改动。
+内存实现与外部向量库保持相同的 upsert/search 形态，并通过 JSON 支持跨进程查询。
 """
 
 from __future__ import annotations
@@ -24,16 +23,22 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+def _matches_filter_value(got: Any, want: Any) -> bool:
+    if not isinstance(want, list):
+        return got == want
+    if not want:
+        return False
+    if isinstance(got, list):
+        return any(value in want for value in got)
+    return got in want
+
+
 def _passes(chunk_meta: dict[str, Any], filters: Filter | None) -> bool:
-    """MVP 空过滤 → 全通过。给出的条件按 等值 / 列表成员 匹配（v0.2 细化语义）。"""
+    """空过滤全通过；标量做等值匹配，数组做成员或交集匹配。"""
     if not filters:
         return True
     for key, want in filters.items():
-        got = chunk_meta.get(key)
-        if isinstance(want, list):
-            if got not in want:
-                return False
-        elif got != want:
+        if not _matches_filter_value(chunk_meta.get(key), want):
             return False
     return True
 
