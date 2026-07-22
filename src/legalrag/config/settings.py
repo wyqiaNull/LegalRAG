@@ -25,6 +25,10 @@ class Secrets(BaseSettings):
     embedding_api_key: str = ""
     embedding_model: str = "bge-m3"
 
+    rerank_api_base: str = ""
+    rerank_api_key: str = ""
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+
     llm_api_base: str = ""
     llm_api_key: str = ""
     llm_model: str = "qwen2.5-7b-instruct"
@@ -47,6 +51,7 @@ class EmbeddingCfg(BaseModel):
     model_config = {"extra": "allow"}
     impl: str = "bge_m3_api"
     dim: int = 1024
+    batch_size: int = 32
 
 
 class StoreCfg(BaseModel):
@@ -59,12 +64,15 @@ class StoreCfg(BaseModel):
 class RetrievalCfg(BaseModel):
     model_config = {"extra": "allow"}
     impl: str = "vector_only"
+    top_n: int = 50
     top_k: int = 5
+    rrf_k: int = 60
 
 
 class RerankCfg(BaseModel):
     model_config = {"extra": "allow"}
     impl: str = "noop"
+    timeout: float = 30.0
 
 
 class GenerationCfg(BaseModel):
@@ -78,6 +86,14 @@ class LLMCfg(BaseModel):
     impl: str = "qwen"
 
 
+class ConversationCfg(BaseModel):
+    model_config = {"extra": "allow"}
+    enabled: bool = True
+    resolver: str = "llm"
+    history_turns: int = 4
+    path: str = ""
+
+
 class AppConfig(BaseModel):
     """一份 yaml 配置的强类型视图。"""
 
@@ -88,6 +104,7 @@ class AppConfig(BaseModel):
     rerank: RerankCfg = Field(default_factory=RerankCfg)
     generation: GenerationCfg = Field(default_factory=GenerationCfg)
     llm: LLMCfg = Field(default_factory=LLMCfg)
+    conversation: ConversationCfg = Field(default_factory=ConversationCfg)
 
 
 class Settings(BaseModel):

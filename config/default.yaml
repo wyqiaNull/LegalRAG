@@ -3,13 +3,14 @@
 
 ingest:
   loader: auto            # 按扩展名分派 pdf/docx/txt
-  chunker: fixed_len      # [MVP] 固定长度+overlap；[v0.1] 可切 clause
+  chunker: clause         # v0.1 默认按完整法条分块；fixed_len 保留作 baseline
   chunk_size: 512
   chunk_overlap: 64
 
 embedding:
-  impl: bge_m3_api        # [MVP] dense；sparse 字段 v0.1 启用
+  impl: bge_m3_api        # dense embedding；BM25 稀疏检索由内存存储计算
   dim: 1024
+  batch_size: 32
 
 store:
   vector: memory          # [MVP] 内存实现，接口与 Milvus 一致；量大再切
@@ -17,11 +18,14 @@ store:
   path: data/processed    # 内存实现落盘目录（跨 CLI 调用持久化）
 
 retrieval:
-  impl: vector_only       # [MVP] 纯向量单阶段；[v0.1] hybrid_rerank
+  impl: hybrid_rerank     # BM25 + dense 双路召回，经 RRF 融合
+  top_n: 50
   top_k: 5
+  rrf_k: 60
 
 rerank:
-  impl: noop              # [MVP] 占位保持链路形状；[v0.1] bge_api
+  impl: bge_api
+  timeout: 30
 
 generation:
   impl: default
@@ -29,3 +33,9 @@ generation:
 
 llm:
   impl: qwen              # [MVP] Qwen/DeepSeek API；离线/测试可切 echo
+
+conversation:
+  enabled: true
+  resolver: llm
+  history_turns: 4
+  path: ""                # 留空时使用 <store.path>/conversations.json

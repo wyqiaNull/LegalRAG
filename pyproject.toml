@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "legalrag"
-version = "0.0.1"
-description = "LegalRAG —— 企业级合同法规智能问答系统（渐进式 RAG，MVP baseline）"
+version = "0.1.0"
+description = "LegalRAG —— 企业级合同法规智能问答系统（渐进式 RAG，v0.1）"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",

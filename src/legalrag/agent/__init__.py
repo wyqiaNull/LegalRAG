@@ -1,5 +1,8 @@
-"""编排层 —— Agentic 决策。
+"""Agentic 编排层。
 
-TODO[v0.3]：router / reflection / refusal / coref + orchestrator 串联。
-MVP 阶段编排逻辑先直接在 cli 里线性串起 ingest/retrieval/generation。
+v0.1 先实现多轮指代消解；路由、反思和拒答在 v0.3 接入。
 """
+
+from __future__ import annotations
+
+from . import coref  # noqa: F401

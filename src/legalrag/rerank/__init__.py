@@ -1,8 +1,5 @@
-"""Rerank 能力层。
-
-TODO[v0.1]：bge_api.py —— 真实 cross-encoder 精排。
-"""
+"""Rerank 能力层。"""
 
 from __future__ import annotations
 
-from . import noop  # noqa: F401 —— 触发注册副作用
+from . import bge_api, noop  # noqa: F401 —— 触发注册副作用

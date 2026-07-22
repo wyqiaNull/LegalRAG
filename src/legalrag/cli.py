@@ -1,6 +1,5 @@
-"""CLI 入口与 MVP 组装根。
+"""CLI 入口与组件组装根。
 
-编排层 v0.3 才独立（agent/），MVP 阶段在此线性串起 ingest→检索→精排→生成。
 本模块是**组装根**：集中 import 各能力实现以触发注册，再按 config 经 registry 注入，
 主流程不 import 任何具体实现。
 """
@@ -8,17 +7,21 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import typer
 
-from . import embedding, generation, llm, rerank, retrieval, store  # noqa: F401
+from . import agent, embedding, generation, llm, rerank, retrieval, store  # noqa: F401
+from .agent.session import JsonConversationStore
 from .config.settings import Settings, load_settings
 from .core import registry
-from .core.models import Answer, Identity, Query
+from .core.models import Answer, Candidate, Identity, Query
 from .ingest import IngestPipeline  # 触发 ingest 包注册
+from .ingest.stats import LengthSummary, analyze_chunks
 
-app = typer.Typer(help="LegalRAG —— 企业级合同法规智能问答系统（MVP）")
+app = typer.Typer(help="LegalRAG —— 企业级合同法规智能问答系统（v0.1）")
 
 
 def _build(kind: str, name: str, **candidates: Any) -> Any:
@@ -43,18 +46,26 @@ class Components:
             api_key=sec.embedding_api_key,
             model=sec.embedding_model,
             dim=cfg.embedding.dim,
+            batch_size=cfg.embedding.batch_size,
         )
         self.vector_store = _build("vector_store", cfg.store.vector, path=cfg.store.path)
         self.metadata_store = _build(
             "metadata_store", cfg.store.metadata, path=cfg.store.path
         )
-        self.reranker = _build("reranker", cfg.rerank.impl)
         self.llm = _build(
             "llm",
             cfg.llm.impl,
             api_base=sec.llm_api_base,
             api_key=sec.llm_api_key,
             model=sec.llm_model,
+        )
+        self.reranker = _build(
+            "reranker",
+            cfg.rerank.impl,
+            api_base=sec.rerank_api_base or sec.embedding_api_base,
+            api_key=sec.rerank_api_key or sec.embedding_api_key,
+            model=sec.rerank_model,
+            timeout=cfg.rerank.timeout,
         )
         self.generator = _build(
             "generator",
@@ -67,6 +78,21 @@ class Components:
             cfg.retrieval.impl,
             embedder=self.embedder,
             vector_store=self.vector_store,
+            rrf_k=cfg.retrieval.rrf_k,
+        )
+        self.coreference = None
+        if cfg.conversation.enabled:
+            self.coreference = _build(
+                "coreference",
+                cfg.conversation.resolver,
+                llm=self.llm,
+                history_turns=cfg.conversation.history_turns,
+            )
+        conversation_path = cfg.conversation.path or str(
+            Path(cfg.store.path) / "conversations.json"
+        )
+        self.conversation_store = JsonConversationStore(
+            conversation_path, cfg.conversation.history_turns
         )
 
     def pipeline(self) -> IngestPipeline:
@@ -85,6 +111,13 @@ class Components:
 # ============ 可被测试直接调用的编排函数 ============
 
 
+@dataclass(frozen=True)
+class QueryExecution:
+    answer: Answer
+    candidates: list[Candidate]
+    retrieval_question: str
+
+
 def run_ingest(path: str, settings: Settings | None = None, **doc_meta: Any) -> int:
     settings = settings or load_settings()
     comp = Components(settings)
@@ -92,14 +125,60 @@ def run_ingest(path: str, settings: Settings | None = None, **doc_meta: Any) -> 
     return len(chunks)
 
 
-def run_query(text: str, settings: Settings | None = None) -> Answer:
+def run_query_details(
+    text: str,
+    settings: Settings | None = None,
+    session_id: str | None = None,
+) -> QueryExecution:
     settings = settings or load_settings()
     comp = Components(settings)
-    top_k = settings.config.retrieval.top_k
-    query = Query(text=text, identity=Identity(), top_k=top_k)
-    candidates = comp.retriever.search(query, None, top_k)  # MVP filters 传空
-    candidates = comp.reranker.rerank(query, candidates, top_k)
-    return comp.generator.generate(query, candidates)
+    cfg = settings.config.retrieval
+    retrieval_question = text
+    if session_id and comp.coreference is not None:
+        history = comp.conversation_store.get(session_id)
+        retrieval_question = comp.coreference.resolve(text, history)
+    query = Query(
+        text=retrieval_question,
+        session_id=session_id,
+        identity=Identity(),
+        top_k=cfg.top_k,
+    )
+    candidates = comp.retriever.search(query, None, cfg.top_n)
+    candidates = comp.reranker.rerank(query, candidates, cfg.top_k)
+    answer = comp.generator.generate(query, candidates)
+    if session_id and comp.coreference is not None:
+        comp.conversation_store.append(session_id, retrieval_question)
+    return QueryExecution(answer, candidates, retrieval_question)
+
+
+def run_query(
+    text: str,
+    settings: Settings | None = None,
+    session_id: str | None = None,
+) -> Answer:
+    return run_query_details(text, settings, session_id).answer
+
+
+def _input_documents(path: str) -> list[str]:
+    target = Path(path)
+    supported = {".pdf", ".docx", ".txt", ".md"}
+    if target.is_file() and target.suffix.lower() in supported:
+        return [str(target)]
+    if target.is_dir():
+        return [
+            str(candidate)
+            for candidate in sorted(target.iterdir())
+            if candidate.is_file() and candidate.suffix.lower() in supported
+        ]
+    raise typer.BadParameter(f"找不到支持的文档：{path}")
+
+
+def _print_summary(name: str, summary: LengthSummary) -> None:
+    typer.echo(
+        f"{name}: count={summary.count}, min={summary.minimum}, "
+        f"max={summary.maximum}, avg={summary.average:.2f}, "
+        f"median={summary.median:g}"
+    )
 
 
 # ============ Typer 命令 ============
@@ -120,13 +199,50 @@ def ingest(
 def query(
     text: str = typer.Argument(..., help="用户问题"),
     config: str = typer.Option(None, "--config", "-c", help="配置文件路径"),
+    session_id: str | None = typer.Option(None, "--session-id", help="多轮会话 ID"),
+    show_hits: bool = typer.Option(False, "--show-hits", help="显示检索候选与分数"),
 ) -> None:
     """检索并生成答案。"""
     settings = load_settings(config)
-    answer = run_query(text, settings)
+    result = run_query_details(text, settings, session_id)
+    answer = result.answer
     typer.echo(answer.text)
     if answer.retrieved_chunk_ids:
         typer.echo(f"\n[命中 {len(answer.retrieved_chunk_ids)} 个 chunk]")
+    if show_hits:
+        if result.retrieval_question != text:
+            typer.echo(f"[独立检索问题] {result.retrieval_question}")
+        for rank, candidate in enumerate(result.candidates, start=1):
+            chunk = candidate.chunk
+            location = f"《{chunk.doc_name}》 {chunk.clause_no}".strip()
+            typer.echo(
+                f"{rank}. {location} source={candidate.source.value} "
+                f"score={candidate.score:.6f} chunk_id={chunk.chunk_id}"
+            )
+
+
+@app.command("chunk-stats")
+def chunk_stats(
+    path: str = typer.Argument(..., help="单个文档或文档目录"),
+    config: str = typer.Option(None, "--config", "-c", help="配置文件路径"),
+) -> None:
+    """统计分块完整率及字符长度分布，不执行 embedding 或落库。"""
+    settings = load_settings(config)
+    loader = _build("loader", settings.config.ingest.loader)
+    chunker = _build(
+        "chunker",
+        settings.config.ingest.chunker,
+        chunk_size=settings.config.ingest.chunk_size,
+        chunk_overlap=settings.config.ingest.chunk_overlap,
+    )
+    stats = analyze_chunks(_input_documents(path), loader, chunker)
+    typer.echo(
+        "法条一对一完整率: "
+        f"{stats.one_article_chunks}/{stats.source_articles} "
+        f"({stats.one_to_one_ratio:.2%})"
+    )
+    _print_summary("法条 chunk", stats.clause_chunks)
+    _print_summary("全部 chunk", stats.all_chunks)
 
 
 if __name__ == "__main__":

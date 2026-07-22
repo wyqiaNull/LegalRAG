@@ -14,6 +14,7 @@ from typing import Any
 from ..core import registry
 from ..core.interfaces import Candidate, Filter, VectorStore
 from ..core.models import CandidateSource, Chunk
+from .bm25 import bm25_scores
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -76,6 +77,27 @@ class MemoryVectorStore(VectorStore):
                 chunk=Chunk(**meta), score=score, source=CandidateSource.DENSE
             )
             for score, meta in scored[:top_n]
+        ]
+
+    def search_sparse(
+        self, query: str, filters: Filter | None, top_n: int
+    ) -> list[Candidate]:
+        """在过滤后的语料上计算 BM25 排名。"""
+        records = [
+            rec for rec in self._records.values() if _passes(rec["chunk"], filters)
+        ]
+        scores = bm25_scores(query, [rec["chunk"]["content"] for rec in records])
+        ranked = [
+            (score, rec["chunk"])
+            for score, rec in zip(scores, records)
+            if score > 0.0
+        ]
+        ranked.sort(key=lambda item: (-item[0], item[1]["chunk_id"]))
+        return [
+            Candidate(
+                chunk=Chunk(**meta), score=score, source=CandidateSource.SPARSE
+            )
+            for score, meta in ranked[:top_n]
         ]
 
 

@@ -10,6 +10,7 @@ ingest:
 embedding:
   impl: local_hash        # 确定性词面哈希向量，仅离线用
   dim: 256
+  batch_size: 32
 
 store:
   vector: memory
@@ -18,7 +19,9 @@ store:
 
 retrieval:
   impl: vector_only
+  top_n: 3
   top_k: 3
+  rrf_k: 60
 
 rerank:
   impl: noop
@@ -29,3 +32,9 @@ generation:
 
 llm:
   impl: echo              # 占位回显，不产真实法律意见
+
+conversation:
+  enabled: false          # echo 不具备指代改写能力
+  resolver: llm
+  history_turns: 4
+  path: ""
