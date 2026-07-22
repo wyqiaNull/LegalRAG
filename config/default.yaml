@@ -14,7 +14,7 @@ embedding:
 
 store:
   vector: memory          # [MVP] 内存实现，接口与 Milvus 一致；量大再切
-  metadata: memory        # [MVP] 内存/占位；v0.2 切 postgres
+  metadata: postgres      # 元数据、访问策略与文档版本关系持久化
   path: data/processed    # 内存实现落盘目录（跨 CLI 调用持久化）
 
 retrieval:
@@ -39,3 +39,18 @@ conversation:
   resolver: llm
   history_turns: 4
   path: ""                # 留空时使用 <store.path>/conversations.json
+
+governance:
+  acl_policies:
+    - role: legal_staff
+      allowed_confidentiality: [public, internal, secret]
+      allowed_doc_types: [regulation, policy, legal_opinion]
+    - role: business_user
+      allowed_confidentiality: [public, internal]
+      allowed_doc_types: [regulation, policy, legal_opinion]
+    - role: compliance_auditor
+      allowed_confidentiality: [public, internal, secret]
+      allowed_doc_types: [regulation, policy, legal_opinion]
+    - role: external_client
+      allowed_confidentiality: [public]
+      allowed_doc_types: [regulation, policy, legal_opinion]

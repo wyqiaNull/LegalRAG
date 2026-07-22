@@ -33,7 +33,9 @@ class IngestPipeline:
         doc_meta 可覆盖文档级元数据（doc_type/version/confidentiality/tenant_id 等）。
         """
         raw = self.loader.load(path)
-        base = metadata.base_meta(raw.doc_name, **doc_meta)
+        meta_values = dict(doc_meta)
+        doc_name = meta_values.pop("doc_name", raw.doc_name)
+        base = metadata.base_meta(doc_name, **meta_values)
         chunks = self.chunker.split(raw, base)
         if not chunks:
             return []

@@ -22,6 +22,10 @@ class IngestError(LegalRAGError):
     """摄取阶段错误（无法加载文件、不支持的格式等）。"""
 
 
+class StorageError(LegalRAGError):
+    """持久化失败（数据库连接、建表或事务写入失败）。"""
+
+
 class RetrievalError(LegalRAGError):
     """检索阶段错误（向量库不可用、维度不匹配等）。"""
 

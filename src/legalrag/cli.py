@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +18,11 @@ from . import agent, embedding, generation, llm, rerank, retrieval, store  # noq
 from .agent.session import JsonConversationStore
 from .config.settings import Settings, load_settings
 from .core import registry
-from .core.models import Answer, Candidate, Identity, Query
+from .core.models import Answer, Candidate, Confidentiality, DocType, Identity, Query
 from .ingest import IngestPipeline  # 触发 ingest 包注册
 from .ingest.stats import LengthSummary, analyze_chunks
 
-app = typer.Typer(help="LegalRAG —— 企业级合同法规智能问答系统（v0.1）")
+app = typer.Typer(help="LegalRAG —— 企业级合同法规智能问答系统")
 
 
 def _build(kind: str, name: str, **candidates: Any) -> Any:
@@ -50,7 +51,14 @@ class Components:
         )
         self.vector_store = _build("vector_store", cfg.store.vector, path=cfg.store.path)
         self.metadata_store = _build(
-            "metadata_store", cfg.store.metadata, path=cfg.store.path
+            "metadata_store",
+            cfg.store.metadata,
+            path=cfg.store.path,
+            dsn=sec.postgres_dsn,
+            acl_policies=[
+                policy.model_dump(mode="json")
+                for policy in cfg.governance.acl_policies
+            ],
         )
         self.llm = _build(
             "llm",
@@ -188,10 +196,48 @@ def _print_summary(name: str, summary: LengthSummary) -> None:
 def ingest(
     path: str = typer.Argument(..., help="待摄取的文件路径（pdf/docx/txt）"),
     config: str = typer.Option(None, "--config", "-c", help="配置文件路径"),
+    doc_name: str | None = typer.Option(
+        None, "--doc-name", help="稳定文档名；多版本文档应保持一致"
+    ),
+    doc_type: DocType = typer.Option(
+        DocType.REGULATION, "--doc-type", help="文档类型"
+    ),
+    tenant_id: str = typer.Option("default", "--tenant-id", help="所属租户"),
+    department: str = typer.Option("", "--department", help="所属部门"),
+    allowed_role: list[str] = typer.Option(
+        [], "--allowed-role", help="允许访问的角色，可重复指定"
+    ),
+    confidentiality: Confidentiality = typer.Option(
+        Confidentiality.PUBLIC, "--confidentiality", help="文档密级"
+    ),
+    version: str = typer.Option("", "--version", help="文档版本号"),
+    effective_date: str | None = typer.Option(
+        None, "--effective-date", help="生效日期，格式 YYYY-MM-DD"
+    ),
 ) -> None:
     """摄取一个文档入库。"""
     settings = load_settings(config)
-    n = run_ingest(path, settings)
+    normalized_date = None
+    if effective_date:
+        try:
+            normalized_date = date.fromisoformat(effective_date).isoformat()
+        except ValueError as exc:
+            raise typer.BadParameter(
+                "生效日期必须使用 YYYY-MM-DD 格式", param_hint="--effective-date"
+            ) from exc
+    doc_meta: dict[str, Any] = {
+        "doc_type": doc_type,
+        "tenant_id": tenant_id,
+        "department": department,
+        "confidentiality": confidentiality,
+        "version": version,
+        "effective_date": normalized_date,
+    }
+    if doc_name:
+        doc_meta["doc_name"] = doc_name
+    if allowed_role:
+        doc_meta["allowed_roles"] = list(dict.fromkeys(allowed_role))
+    n = run_ingest(path, settings, **doc_meta)
     typer.echo(f"✅ 摄取完成：{path} → {n} 个 chunk 已入库")
 
 

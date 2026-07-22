@@ -1,7 +1,4 @@
-"""MetadataStore：保存 chunk 元数据、提供 ACL 策略。
-
-MVP 内存实现 + JSON 落盘；ACL 为占位（返回 None），v0.2 接 PostgresStore 与 acl_policies。
-"""
+"""MetadataStore 的 JSON/内存实现，供离线链路与测试使用。"""
 
 from __future__ import annotations
 
@@ -15,9 +12,16 @@ from ..core.models import Chunk
 
 
 class MemoryMetadataStore(MetadataStore):
-    def __init__(self, path: str = "data/processed") -> None:
+    def __init__(
+        self,
+        path: str = "data/processed",
+        acl_policies: list[dict[str, Any]] | None = None,
+    ) -> None:
         self._file = Path(path) / "metadata.json"
         self._records: dict[str, dict[str, Any]] = self._load()
+        self._acl_policies = {
+            policy["role"]: policy for policy in (acl_policies or [])
+        }
 
     def _load(self) -> dict[str, dict[str, Any]]:
         if self._file.exists():
@@ -36,8 +40,22 @@ class MemoryMetadataStore(MetadataStore):
         self._save()
 
     def get_acl(self, role: str) -> Any:
-        # 占位：MVP 全放行；v0.2 由 acl_policies 返回角色可见密级/类型策略。
-        return None
+        return self._acl_policies.get(role)
+
+    def list_current_chunks(
+        self,
+        doc_name: str,
+        tenant_id: str,
+        doc_type: str,
+    ) -> list[Chunk]:
+        return [
+            Chunk(**record)
+            for record in self._records.values()
+            if record["doc_name"] == doc_name
+            and record["tenant_id"] == tenant_id
+            and record["doc_type"] == doc_type
+            and record["is_current"]
+        ]
 
 
 registry.register("metadata_store", "memory", MemoryMetadataStore)

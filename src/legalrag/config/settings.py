@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..core.errors import ConfigError
+from ..core.models import Confidentiality, DocType
 
 
 class Secrets(BaseSettings):
@@ -32,6 +33,8 @@ class Secrets(BaseSettings):
     llm_api_base: str = ""
     llm_api_key: str = ""
     llm_model: str = "qwen2.5-7b-instruct"
+
+    postgres_dsn: str = ""
 
     legalrag_config: str = "config/default.yaml"
 
@@ -94,6 +97,42 @@ class ConversationCfg(BaseModel):
     path: str = ""
 
 
+class AclPolicyCfg(BaseModel):
+    role: str
+    allowed_confidentiality: list[Confidentiality]
+    allowed_doc_types: list[DocType] = Field(default_factory=lambda: list(DocType))
+    tenant_scope: str = "own"
+
+
+def _default_acl_policies() -> list[AclPolicyCfg]:
+    return [
+        AclPolicyCfg(
+            role="legal_staff",
+            allowed_confidentiality=list(Confidentiality),
+        ),
+        AclPolicyCfg(
+            role="business_user",
+            allowed_confidentiality=[
+                Confidentiality.PUBLIC,
+                Confidentiality.INTERNAL,
+            ],
+        ),
+        AclPolicyCfg(
+            role="compliance_auditor",
+            allowed_confidentiality=list(Confidentiality),
+        ),
+        AclPolicyCfg(
+            role="external_client",
+            allowed_confidentiality=[Confidentiality.PUBLIC],
+        ),
+    ]
+
+
+class GovernanceCfg(BaseModel):
+    model_config = {"extra": "allow"}
+    acl_policies: list[AclPolicyCfg] = Field(default_factory=_default_acl_policies)
+
+
 class AppConfig(BaseModel):
     """一份 yaml 配置的强类型视图。"""
 
@@ -105,6 +144,7 @@ class AppConfig(BaseModel):
     generation: GenerationCfg = Field(default_factory=GenerationCfg)
     llm: LLMCfg = Field(default_factory=LLMCfg)
     conversation: ConversationCfg = Field(default_factory=ConversationCfg)
+    governance: GovernanceCfg = Field(default_factory=GovernanceCfg)
 
 
 class Settings(BaseModel):

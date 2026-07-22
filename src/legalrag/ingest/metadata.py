@@ -10,7 +10,7 @@ import hashlib
 import uuid
 from typing import Any
 
-from ..core.models import Chunk, Confidentiality, DocType
+from ..core.models import ROLE_WILDCARD, Chunk, Confidentiality, DocType
 
 # uuid5 命名空间，保证同名文档得到稳定 doc_id（re-ingest 幂等）。
 _DOC_NS = uuid.UUID("00000000-0000-0000-0000-00000000face")
@@ -21,8 +21,16 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def doc_id_for(doc_name: str, version: str = "") -> str:
-    return str(uuid.uuid5(_DOC_NS, f"{doc_name}@{version}"))
+def doc_id_for(
+    doc_name: str,
+    version: str = "",
+    tenant_id: str = "default",
+    doc_type: DocType = DocType.REGULATION,
+) -> str:
+    key = f"{doc_name}@{version}"
+    if tenant_id != "default" or doc_type != DocType.REGULATION:
+        key = f"{tenant_id}:{doc_type.value}:{key}"
+    return str(uuid.uuid5(_DOC_NS, key))
 
 
 def base_meta(
@@ -31,16 +39,22 @@ def base_meta(
     doc_type: DocType = DocType.REGULATION,
     version: str = "",
     tenant_id: str = "default",
+    department: str = "",
+    allowed_roles: list[str] | None = None,
     confidentiality: Confidentiality = Confidentiality.PUBLIC,
+    effective_date: str | None = None,
 ) -> dict[str, Any]:
     """文档级公共元数据（chunk 级字段由 assemble_chunk 补齐）。"""
     return {
-        "doc_id": doc_id_for(doc_name, version),
+        "doc_id": doc_id_for(doc_name, version, tenant_id, doc_type),
         "doc_name": doc_name,
         "doc_type": doc_type,
         "version": version,
         "tenant_id": tenant_id,
+        "department": department,
+        "allowed_roles": [ROLE_WILDCARD] if allowed_roles is None else allowed_roles,
         "confidentiality": confidentiality,
+        "effective_date": effective_date,
     }
 
 
