@@ -34,10 +34,24 @@ def _matches_filter_value(got: Any, want: Any) -> bool:
 
 
 def _passes(chunk_meta: dict[str, Any], filters: Filter | None) -> bool:
-    """空过滤全通过；标量做等值匹配，数组做成员或交集匹配。"""
+    """空过滤全通过；普通字段取交集，``$or`` 分支至少通过一个。"""
     if not filters:
         return True
     for key, want in filters.items():
+        if not isinstance(key, str):
+            return False
+        if key == "$or":
+            if (
+                not isinstance(want, list)
+                or not want
+                or any(not isinstance(branch, dict) or not branch for branch in want)
+            ):
+                return False
+            if not any(_passes(chunk_meta, branch) for branch in want):
+                return False
+            continue
+        if key.startswith("$"):
+            return False
         if not _matches_filter_value(chunk_meta.get(key), want):
             return False
     return True
@@ -61,12 +75,22 @@ class MemoryVectorStore(VectorStore):
         )
 
     def upsert(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+        if len(chunks) != len(vectors):
+            raise ValueError("chunk 与向量数量必须一致")
         for chunk, vec in zip(chunks, vectors):
             self._records[chunk.chunk_id] = {
                 "chunk": chunk.model_dump(mode="json"),
                 "vector": vec,
             }
         self._save()
+
+    def get_vectors(self, chunk_ids: list[str]) -> dict[str, list[float]]:
+        """按 chunk_id 读取已有向量，供版本升级复用。"""
+        return {
+            chunk_id: list(self._records[chunk_id]["vector"])
+            for chunk_id in chunk_ids
+            if chunk_id in self._records
+        }
 
     def search(
         self, vector: list[float], filters: Filter | None, top_n: int

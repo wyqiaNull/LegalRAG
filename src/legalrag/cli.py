@@ -20,7 +20,7 @@ from .config.settings import Settings, load_settings
 from .core import registry
 from .core.errors import ConfigError
 from .core.models import Answer, Candidate, Confidentiality, DocType, Identity, Query
-from .ingest import IngestPipeline  # 触发 ingest 包注册
+from .ingest import IngestPipeline, IngestResult  # 触发 ingest 包注册
 from .ingest.stats import LengthSummary, analyze_chunks
 
 app = typer.Typer(help="LegalRAG —— 企业级合同法规智能问答系统")
@@ -67,6 +67,14 @@ class Components:
                 "permission_filter",
                 cfg.governance.permission_filter,
                 metadata_store=self.metadata_store,
+                shared_tenant_id=cfg.governance.shared_tenant_id,
+                shared_doc_types=cfg.governance.shared_doc_types,
+            )
+        self.version_filter = None
+        if cfg.governance.versions_enabled:
+            self.version_filter = _build(
+                "version_filter",
+                cfg.governance.version_filter,
             )
         self.llm = _build(
             "llm",
@@ -120,7 +128,14 @@ class Components:
             chunk_overlap=self.settings.config.ingest.chunk_overlap,
         )
         return IngestPipeline(
-            loader, chunker, self.embedder, self.vector_store, self.metadata_store
+            loader,
+            chunker,
+            self.embedder,
+            self.vector_store,
+            self.metadata_store,
+            versions_enabled=self.settings.config.governance.versions_enabled,
+            shared_tenant_id=self.settings.config.governance.shared_tenant_id,
+            shared_doc_types=self.settings.config.governance.shared_doc_types,
         )
 
 
@@ -141,15 +156,29 @@ def run_ingest(path: str, settings: Settings | None = None, **doc_meta: Any) -> 
     return len(chunks)
 
 
+def run_ingest_details(
+    path: str, settings: Settings | None = None, **doc_meta: Any
+) -> IngestResult:
+    settings = settings or load_settings()
+    return Components(settings).pipeline().run_detailed(path, **doc_meta)
+
+
 def run_query_details(
     text: str,
     settings: Settings | None = None,
     session_id: str | None = None,
     identity: Identity | None = None,
+    version: str | None = None,
 ) -> QueryExecution:
     settings = settings or load_settings()
     if settings.config.governance.permissions_enabled and identity is None:
         raise ConfigError("权限过滤启用时必须提供查询身份")
+    if version is not None:
+        version = version.strip()
+        if not version:
+            raise ConfigError("显式查询的版本号不能为空")
+        if not settings.config.governance.versions_enabled:
+            raise ConfigError("当前配置未启用版本查询")
     comp = Components(settings)
     cfg = settings.config.retrieval
     retrieval_question = text
@@ -162,12 +191,20 @@ def run_query_details(
         identity=identity or Identity(),
         top_k=cfg.top_k,
     )
-    filters = None
+    filters: dict[str, Any] = {}
     if comp.permission_filter is not None:
-        filters = comp.permission_filter.build(query.identity)
-    candidates = comp.retriever.search(query, filters, cfg.top_n)
+        filters.update(comp.permission_filter.build(query.identity))
+    if comp.version_filter is not None:
+        filters.update(comp.version_filter.build(only_current=version is None))
+        if version is not None:
+            filters["version"] = version
+    candidates = comp.retriever.search(query, filters or None, cfg.top_n)
     candidates = comp.reranker.rerank(query, candidates, cfg.top_k)
     answer = comp.generator.generate(query, candidates)
+    if version is not None and any(not candidate.chunk.is_current for candidate in candidates):
+        answer = answer.model_copy(
+            update={"text": f"【历史版本：{version}】\n{answer.text}"}
+        )
     if session_id and comp.coreference is not None:
         comp.conversation_store.append(session_id, retrieval_question)
     return QueryExecution(answer, candidates, retrieval_question)
@@ -178,8 +215,9 @@ def run_query(
     settings: Settings | None = None,
     session_id: str | None = None,
     identity: Identity | None = None,
+    version: str | None = None,
 ) -> Answer:
-    return run_query_details(text, settings, session_id, identity).answer
+    return run_query_details(text, settings, session_id, identity, version).answer
 
 
 def _input_documents(path: str) -> list[str]:
@@ -252,8 +290,13 @@ def ingest(
         doc_meta["doc_name"] = doc_name
     if allowed_role:
         doc_meta["allowed_roles"] = list(dict.fromkeys(allowed_role))
-    n = run_ingest(path, settings, **doc_meta)
-    typer.echo(f"✅ 摄取完成：{path} → {n} 个 chunk 已入库")
+    result = run_ingest_details(path, settings, **doc_meta)
+    stats = result.stats
+    typer.echo(
+        f"摄取完成：{path}；总块数={stats.total_chunks}，"
+        f"重新 embedding={stats.embedded_chunks}，"
+        f"向量复用={stats.reused_vectors}，被取代块数={stats.superseded_chunks}"
+    )
 
 
 @app.command()
@@ -270,10 +313,17 @@ def query(
         "--allowed-confidentiality",
         help="进一步限制可见密级，可重复指定",
     ),
+    version: str | None = typer.Option(
+        None, "--version", help="显式查询指定版本；历史版本会被标注"
+    ),
 ) -> None:
     """检索并生成答案。"""
     settings = load_settings(config)
     permissions_enabled = settings.config.governance.permissions_enabled
+    if version is not None and not settings.config.governance.versions_enabled:
+        raise typer.BadParameter(
+            "当前配置未启用版本查询", param_hint="--version"
+        )
     if permissions_enabled and not role:
         raise typer.BadParameter(
             "权限过滤启用时必须提供用户角色", param_hint="--role"
@@ -294,7 +344,12 @@ def query(
                 else list(Confidentiality)
             ),
         )
-    result = run_query_details(text, settings, session_id, identity)
+    if version is None:
+        result = run_query_details(text, settings, session_id, identity)
+    else:
+        result = run_query_details(
+            text, settings, session_id, identity, version=version
+        )
     answer = result.answer
     typer.echo(answer.text)
     if answer.retrieved_chunk_ids:
@@ -307,7 +362,9 @@ def query(
             location = f"《{chunk.doc_name}》 {chunk.clause_no}".strip()
             typer.echo(
                 f"{rank}. {location} source={candidate.source.value} "
-                f"score={candidate.score:.6f} chunk_id={chunk.chunk_id}"
+                f"score={candidate.score:.6f} version={chunk.version or '-'} "
+                f"status={'current' if chunk.is_current else 'history'} "
+                f"chunk_id={chunk.chunk_id}"
             )
 
 

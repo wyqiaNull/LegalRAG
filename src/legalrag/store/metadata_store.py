@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core import registry
+from ..core.errors import StorageError
 from ..core.interfaces import MetadataStore
 from ..core.models import Chunk
 
@@ -56,6 +57,43 @@ class MemoryMetadataStore(MetadataStore):
             and record["doc_type"] == doc_type
             and record["is_current"]
         ]
+
+    def list_version_chunks(
+        self,
+        doc_name: str,
+        tenant_id: str,
+        doc_type: str,
+        version: str,
+    ) -> list[Chunk]:
+        return [
+            Chunk(**record)
+            for record in self._records.values()
+            if record["doc_name"] == doc_name
+            and record["tenant_id"] == tenant_id
+            and record["doc_type"] == doc_type
+            and record["version"] == version
+        ]
+
+    def replace_current(
+        self, chunks: list[Chunk], expected_current_doc_id: str | None
+    ) -> None:
+        if not chunks:
+            return
+        first = chunks[0]
+        current = self.list_current_chunks(
+            first.doc_name, first.tenant_id, first.doc_type.value
+        )
+        current_ids = {chunk.doc_id for chunk in current}
+        actual_current = next(iter(current_ids), None) if len(current_ids) <= 1 else None
+        if len(current_ids) > 1 or actual_current != expected_current_doc_id:
+            raise StorageError("文档现行版本已发生变化，请重试摄取")
+        for chunk in current:
+            self._records[chunk.chunk_id] = chunk.model_copy(
+                update={"is_current": False, "superseded_by": first.doc_id}
+            ).model_dump(mode="json")
+        for chunk in chunks:
+            self._records[chunk.chunk_id] = chunk.model_dump(mode="json")
+        self._save()
 
 
 registry.register("metadata_store", "memory", MemoryMetadataStore)

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..core.errors import ConfigError
@@ -132,7 +132,26 @@ class GovernanceCfg(BaseModel):
     model_config = {"extra": "allow"}
     permissions_enabled: bool = False
     permission_filter: str = "acl"
+    versions_enabled: bool = False
+    version_filter: str = "current"
+    shared_tenant_id: str = "__global__"
+    shared_doc_types: list[DocType] = Field(
+        default_factory=lambda: [DocType.REGULATION]
+    )
     acl_policies: list[AclPolicyCfg] = Field(default_factory=_default_acl_policies)
+
+    @field_validator("shared_tenant_id")
+    @classmethod
+    def validate_shared_tenant_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or normalized == "default":
+            raise ValueError("shared_tenant_id 必须非空且不能为 default")
+        return normalized
+
+    @field_validator("shared_doc_types")
+    @classmethod
+    def deduplicate_shared_doc_types(cls, value: list[DocType]) -> list[DocType]:
+        return list(dict.fromkeys(value))
 
 
 class AppConfig(BaseModel):

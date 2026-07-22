@@ -43,6 +43,10 @@ conversation:
 governance:
   permissions_enabled: true
   permission_filter: acl
+  versions_enabled: true
+  version_filter: current
+  shared_tenant_id: __global__
+  shared_doc_types: [regulation]
   acl_policies:
     - role: legal_staff
       allowed_confidentiality: [public, internal, secret]

@@ -65,6 +65,17 @@ CREATE TABLE IF NOT EXISTS acl_policies (
 )
 """
 
+_DOCUMENT_VERSION_INDEX = """
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_family_version
+ON documents (tenant_id, doc_type, doc_name, version)
+"""
+
+_CURRENT_DOCUMENT_INDEX = """
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_current_family
+ON documents (tenant_id, doc_type, doc_name)
+WHERE is_current = TRUE
+"""
+
 _UPSERT_DOCUMENT = """
 INSERT INTO documents (
     doc_id, doc_name, doc_type, tenant_id, department, allowed_roles,
@@ -183,6 +194,8 @@ class PostgresMetadataStore(MetadataStore):
                 cur.execute(_DOCUMENTS_DDL)
                 cur.execute(_CHUNKS_DDL)
                 cur.execute(_ACL_DDL)
+                cur.execute(_DOCUMENT_VERSION_INDEX)
+                cur.execute(_CURRENT_DOCUMENT_INDEX)
                 if acl_policies:
                     cur.executemany(
                         _UPSERT_ACL,
@@ -248,6 +261,106 @@ class PostgresMetadataStore(MetadataStore):
                 return [_chunk_from_row(row) for row in cur.fetchall()]
         except psycopg.Error as exc:
             raise StorageError(f"查询 PostgreSQL 现行文档失败：{exc}") from exc
+
+    def list_version_chunks(
+        self,
+        doc_name: str,
+        tenant_id: str,
+        doc_type: str,
+        version: str,
+    ) -> list[Chunk]:
+        try:
+            with self._connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT {_CHUNK_FIELDS}
+                    FROM chunks
+                    WHERE doc_name = %s AND tenant_id = %s
+                      AND doc_type = %s AND version = %s
+                    ORDER BY chunk_id
+                    """,
+                    (doc_name, tenant_id, doc_type, version),
+                )
+                return [_chunk_from_row(row) for row in cur.fetchall()]
+        except psycopg.Error as exc:
+            raise StorageError(f"查询 PostgreSQL 文档版本失败：{exc}") from exc
+
+    def replace_current(
+        self, chunks: list[Chunk], expected_current_doc_id: str | None
+    ) -> None:
+        """在单个事务内写入新版，并切换文档族的现行版本。"""
+        if not chunks:
+            return
+        first = chunks[0]
+        staged = [
+            chunk.model_copy(update={"is_current": False, "superseded_by": None})
+            for chunk in chunks
+        ]
+        try:
+            with self._connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT doc_id FROM documents
+                    WHERE doc_name = %s AND tenant_id = %s
+                      AND doc_type = %s AND is_current = TRUE
+                    FOR UPDATE
+                    """,
+                    (first.doc_name, first.tenant_id, first.doc_type.value),
+                )
+                current_rows = cur.fetchall()
+                current_ids = {row["doc_id"] for row in current_rows}
+                actual_current = (
+                    next(iter(current_ids), None) if len(current_ids) <= 1 else None
+                )
+                if len(current_ids) > 1 or actual_current != expected_current_doc_id:
+                    raise StorageError("文档现行版本已发生变化，请重试摄取")
+
+                cur.executemany(
+                    _UPSERT_DOCUMENT,
+                    [_document_values(staged[0])],
+                )
+                cur.executemany(_UPSERT_CHUNK, [_chunk_values(chunk) for chunk in staged])
+
+                if expected_current_doc_id is not None:
+                    cur.execute(
+                        """
+                        UPDATE documents
+                        SET is_current = FALSE, superseded_by = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE doc_id = %s AND is_current = TRUE
+                        """,
+                        (first.doc_id, expected_current_doc_id),
+                    )
+                    cur.execute(
+                        """
+                        UPDATE chunks
+                        SET is_current = FALSE, superseded_by = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE doc_id = %s AND is_current = TRUE
+                        """,
+                        (first.doc_id, expected_current_doc_id),
+                    )
+
+                cur.execute(
+                    """
+                    UPDATE documents
+                    SET is_current = TRUE, superseded_by = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE doc_id = %s
+                    """,
+                    (first.doc_id,),
+                )
+                cur.execute(
+                    """
+                    UPDATE chunks
+                    SET is_current = TRUE, superseded_by = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE doc_id = %s
+                    """,
+                    (first.doc_id,),
+                )
+        except psycopg.Error as exc:
+            raise StorageError(f"切换 PostgreSQL 文档版本失败：{exc}") from exc
 
 
 registry.register("metadata_store", "postgres", PostgresMetadataStore)

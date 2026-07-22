@@ -42,3 +42,7 @@ conversation:
 governance:
   permissions_enabled: false
   permission_filter: acl
+  versions_enabled: false       # 按 README 的无版本参数命令保留基础离线冒烟
+  version_filter: current
+  shared_tenant_id: __global__
+  shared_doc_types: [regulation]

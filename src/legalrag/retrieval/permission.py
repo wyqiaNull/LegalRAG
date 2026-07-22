@@ -22,8 +22,22 @@ class AclPolicy(BaseModel):
 
 
 class AclPermissionFilter(PermissionFilter):
-    def __init__(self, metadata_store: MetadataStore) -> None:
+    def __init__(
+        self,
+        metadata_store: MetadataStore,
+        shared_tenant_id: str = "__global__",
+        shared_doc_types: list[DocType] | None = None,
+    ) -> None:
         self.metadata_store = metadata_store
+        self.shared_tenant_id = shared_tenant_id
+        self.shared_doc_types = [
+            DocType(doc_type).value
+            for doc_type in (
+                [DocType.REGULATION]
+                if shared_doc_types is None
+                else shared_doc_types
+            )
+        ]
 
     def build(self, identity: Identity) -> Filter:
         raw_policy = self.metadata_store.get_acl(identity.role)
@@ -43,11 +57,26 @@ class AclPermissionFilter(PermissionFilter):
             if level in requested
         ]
         doc_types = [doc_type.value for doc_type in policy.allowed_doc_types]
-        if not identity.tenant_id or not confidentiality or not doc_types:
+        if (
+            not identity.tenant_id
+            or identity.tenant_id == self.shared_tenant_id
+            or not confidentiality
+            or not doc_types
+        ):
             return dict(_DENY_ALL)
 
+        tenant_branches: list[Filter] = [{"tenant_id": identity.tenant_id}]
+        if self.shared_doc_types:
+            tenant_branches.append(
+                {
+                    "tenant_id": self.shared_tenant_id,
+                    "confidentiality": [Confidentiality.PUBLIC.value],
+                    "doc_type": self.shared_doc_types,
+                    "allowed_roles": [ROLE_WILDCARD],
+                }
+            )
         return {
-            "tenant_id": identity.tenant_id,
+            "$or": tenant_branches,
             "confidentiality": confidentiality,
             "doc_type": doc_types,
             "allowed_roles": [identity.role, ROLE_WILDCARD],
