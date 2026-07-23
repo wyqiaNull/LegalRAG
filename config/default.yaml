@@ -40,6 +40,10 @@ conversation:
   history_turns: 4
   path: ""                # 留空时使用 <store.path>/conversations.json
 
+routing:
+  enabled: true
+  impl: llm               # 指代消解后、权限过滤和检索前执行 LLM 路由
+
 governance:
   permissions_enabled: true
   permission_filter: acl

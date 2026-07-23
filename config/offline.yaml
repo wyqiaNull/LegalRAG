@@ -39,6 +39,10 @@ conversation:
   history_turns: 4
   path: ""
 
+routing:
+  enabled: false          # echo 不具备分类能力，保持离线 RAG 冒烟链路
+  impl: llm
+
 governance:
   permissions_enabled: false
   permission_filter: acl

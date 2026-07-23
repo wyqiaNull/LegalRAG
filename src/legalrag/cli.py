@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import inspect
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,7 @@ from typing import Any
 import typer
 
 from . import agent, embedding, generation, llm, rerank, retrieval, store  # noqa: F401
+from .agent.orchestrator import AgentOrchestrator, QueryExecution
 from .agent.session import JsonConversationStore
 from .config.settings import Settings, load_settings
 from .core import registry
@@ -26,7 +26,6 @@ from .core.models import (
     Confidentiality,
     DocType,
     Identity,
-    Query,
 )
 from .generation.citation import is_historical_citation
 from .ingest import IngestPipeline, IngestResult  # 触发 ingest 包注册
@@ -127,6 +126,21 @@ class Components:
         self.conversation_store = JsonConversationStore(
             conversation_path, cfg.conversation.history_turns
         )
+        self.router = None
+        if cfg.routing.enabled:
+            self.router = _build("router", cfg.routing.impl, llm=self.llm)
+        self.query_orchestrator = AgentOrchestrator(
+            retriever=self.retriever,
+            reranker=self.reranker,
+            generator=self.generator,
+            top_n=cfg.retrieval.top_n,
+            top_k=cfg.retrieval.top_k,
+            router=self.router,
+            permission_filter=self.permission_filter,
+            version_filter=self.version_filter,
+            coreference=self.coreference,
+            conversation_store=self.conversation_store,
+        )
 
     def pipeline(self) -> IngestPipeline:
         loader = _build("loader", self.settings.config.ingest.loader)
@@ -149,13 +163,6 @@ class Components:
 
 
 # ============ 可被测试直接调用的编排函数 ============
-
-
-@dataclass(frozen=True)
-class QueryExecution:
-    answer: Answer
-    candidates: list[Candidate]
-    retrieval_question: str
 
 
 def _format_citation(citation: Citation, contexts: list[Candidate]) -> str:
@@ -204,30 +211,7 @@ def run_query_details(
         if not settings.config.governance.versions_enabled:
             raise ConfigError("当前配置未启用版本查询")
     comp = Components(settings)
-    cfg = settings.config.retrieval
-    retrieval_question = text
-    if session_id and comp.coreference is not None:
-        history = comp.conversation_store.get(session_id)
-        retrieval_question = comp.coreference.resolve(text, history)
-    query = Query(
-        text=retrieval_question,
-        session_id=session_id,
-        identity=identity or Identity(),
-        top_k=cfg.top_k,
-    )
-    filters: dict[str, Any] = {}
-    if comp.permission_filter is not None:
-        filters.update(comp.permission_filter.build(query.identity))
-    if comp.version_filter is not None:
-        filters.update(comp.version_filter.build(only_current=version is None))
-        if version is not None:
-            filters["version"] = version
-    candidates = comp.retriever.search(query, filters or None, cfg.top_n)
-    candidates = comp.reranker.rerank(query, candidates, cfg.top_k)
-    answer = comp.generator.generate(query, candidates)
-    if session_id and comp.coreference is not None:
-        comp.conversation_store.append(session_id, retrieval_question)
-    return QueryExecution(answer, candidates, retrieval_question)
+    return comp.query_orchestrator.run(text, session_id, identity, version)
 
 
 def run_query(
@@ -385,6 +369,7 @@ def query(
     if answer.retrieved_chunk_ids:
         typer.echo(f"\n[命中 {len(answer.retrieved_chunk_ids)} 个 chunk]")
     if show_hits:
+        typer.echo(f"[路由] {answer.route.value}")
         if result.retrieval_question != text:
             typer.echo(f"[独立检索问题] {result.retrieval_question}")
         for rank, candidate in enumerate(result.candidates, start=1):

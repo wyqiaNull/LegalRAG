@@ -97,6 +97,12 @@ class ConversationCfg(BaseModel):
     path: str = ""
 
 
+class RoutingCfg(BaseModel):
+    model_config = {"extra": "allow"}
+    enabled: bool = False
+    impl: str = "llm"
+
+
 class AclPolicyCfg(BaseModel):
     role: str
     allowed_confidentiality: list[Confidentiality]
@@ -165,6 +171,7 @@ class AppConfig(BaseModel):
     generation: GenerationCfg = Field(default_factory=GenerationCfg)
     llm: LLMCfg = Field(default_factory=LLMCfg)
     conversation: ConversationCfg = Field(default_factory=ConversationCfg)
+    routing: RoutingCfg = Field(default_factory=RoutingCfg)
     governance: GovernanceCfg = Field(default_factory=GovernanceCfg)
 
 
