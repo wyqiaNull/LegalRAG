@@ -14,6 +14,7 @@ from ..core.interfaces import (
     VersionFilter,
 )
 from ..core.models import Answer, Candidate, Identity, Query, Route
+from .refusal import RefusalReason, RefusalResponder
 
 
 class CoreferenceResolver(Protocol):
@@ -33,27 +34,15 @@ class QueryExecution:
     retrieval_question: str
 
 
-_BRANCH_ANSWERS: dict[Route, Answer] = {
-    Route.CHITCHAT: Answer(
-        text="您好，我可以协助查询中国法律法规、企业制度和法律意见。请问有什么需要？",
-        route=Route.CHITCHAT,
-    ),
-    Route.OUT_OF_SCOPE: Answer(
-        text="当前知识库未覆盖该问题，无法提供可靠回答。",
-        refused=True,
-        reason=Route.OUT_OF_SCOPE.value,
-        route=Route.OUT_OF_SCOPE,
-    ),
-    Route.NEED_CLARIFY: Answer(
-        text="信息不足，请补充具体法规、制度、合同或问题背景。",
-        route=Route.NEED_CLARIFY,
-    ),
-    Route.CONTRACT_REVIEW: Answer(
-        text="已识别为合同审查请求，当前版本尚未开放合同审查功能。",
-        refused=True,
-        reason="contract_review_unavailable",
-        route=Route.CONTRACT_REVIEW,
-    ),
+_CHITCHAT_ANSWER = Answer(
+    text="您好，我可以协助查询中国法律法规、企业制度和法律意见。请问有什么需要？",
+    route=Route.CHITCHAT,
+)
+
+_ROUTE_REFUSALS: dict[Route, RefusalReason] = {
+    Route.OUT_OF_SCOPE: RefusalReason.OUT_OF_SCOPE,
+    Route.NEED_CLARIFY: RefusalReason.INSUFFICIENT_INFORMATION,
+    Route.CONTRACT_REVIEW: RefusalReason.CONTRACT_REVIEW_UNAVAILABLE,
 }
 
 
@@ -70,6 +59,7 @@ class AgentOrchestrator:
         version_filter: VersionFilter | None = None,
         coreference: CoreferenceResolver | None = None,
         conversation_store: ConversationStore | None = None,
+        refusal_responder: RefusalResponder | None = None,
     ) -> None:
         self.retriever = retriever
         self.reranker = reranker
@@ -81,6 +71,7 @@ class AgentOrchestrator:
         self.version_filter = version_filter
         self.coreference = coreference
         self.conversation_store = conversation_store
+        self.refusal_responder = refusal_responder or RefusalResponder()
 
     def run(
         self,
@@ -105,9 +96,17 @@ class AgentOrchestrator:
             top_k=self.top_k,
         )
         route = self.router.route(query) if self.router is not None else Route.NORMAL
+        if route is Route.CHITCHAT:
+            return QueryExecution(
+                answer=_CHITCHAT_ANSWER.model_copy(deep=True),
+                candidates=[],
+                retrieval_question=retrieval_question,
+            )
         if route is not Route.NORMAL:
             return QueryExecution(
-                answer=_BRANCH_ANSWERS[route].model_copy(deep=True),
+                answer=self.refusal_responder.refuse(
+                    _ROUTE_REFUSALS[route], route=route
+                ),
                 candidates=[],
                 retrieval_question=retrieval_question,
             )
@@ -122,6 +121,14 @@ class AgentOrchestrator:
 
         candidates = self.retriever.search(query, filters or None, self.top_n)
         candidates = self.reranker.rerank(query, candidates, self.top_k)
+        if not candidates:
+            return QueryExecution(
+                answer=self.refusal_responder.refuse(
+                    RefusalReason.NO_ACCESSIBLE_CONTEXT
+                ),
+                candidates=[],
+                retrieval_question=retrieval_question,
+            )
         answer = self.generator.generate(query, candidates)
         if session_id and self.coreference is not None and self.conversation_store is not None:
             self.conversation_store.append(session_id, retrieval_question)

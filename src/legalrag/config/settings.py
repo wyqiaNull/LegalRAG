@@ -35,6 +35,7 @@ class Secrets(BaseSettings):
     llm_model: str = "qwen2.5-7b-instruct"
 
     postgres_dsn: str = ""
+    legalrag_test_postgres_dsn: str = ""
 
     legalrag_config: str = "config/default.yaml"
 
