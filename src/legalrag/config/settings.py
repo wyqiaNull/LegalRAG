@@ -86,7 +86,7 @@ class GenerationCfg(BaseModel):
 
 class LLMCfg(BaseModel):
     model_config = {"extra": "allow"}
-    impl: str = "qwen"
+    impl: str = "openai"
 
 
 class ConversationCfg(BaseModel):

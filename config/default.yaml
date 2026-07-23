@@ -32,7 +32,7 @@ generation:
   max_context_chunks: 5
 
 llm:
-  impl: qwen              # [MVP] Qwen/DeepSeek API；离线/测试可切 echo
+  impl: openai            # OpenAI 兼容 API（如 Qwen/DeepSeek）；离线/测试可切 echo
 
 conversation:
   enabled: true
