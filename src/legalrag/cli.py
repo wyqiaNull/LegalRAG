@@ -19,7 +19,16 @@ from .agent.session import JsonConversationStore
 from .config.settings import Settings, load_settings
 from .core import registry
 from .core.errors import ConfigError
-from .core.models import Answer, Candidate, Confidentiality, DocType, Identity, Query
+from .core.models import (
+    Answer,
+    Candidate,
+    Citation,
+    Confidentiality,
+    DocType,
+    Identity,
+    Query,
+)
+from .generation.citation import is_historical_citation
 from .ingest import IngestPipeline, IngestResult  # 触发 ingest 包注册
 from .ingest.stats import LengthSummary, analyze_chunks
 
@@ -149,6 +158,21 @@ class QueryExecution:
     retrieval_question: str
 
 
+def _format_citation(citation: Citation, contexts: list[Candidate]) -> str:
+    location = f"《{citation.doc_name}》"
+    if citation.clause_no:
+        location += f" {citation.clause_no}"
+    details = []
+    if citation.version:
+        details.append(f"版本：{citation.version}")
+    if is_historical_citation(citation, contexts):
+        details.append("历史版本")
+    if details:
+        location += f"（{'；'.join(details)}）"
+    page = f"第{citation.page}页" if citation.page is not None else "页码未知"
+    return f"{location}，{page}"
+
+
 def run_ingest(path: str, settings: Settings | None = None, **doc_meta: Any) -> int:
     settings = settings or load_settings()
     comp = Components(settings)
@@ -201,10 +225,6 @@ def run_query_details(
     candidates = comp.retriever.search(query, filters or None, cfg.top_n)
     candidates = comp.reranker.rerank(query, candidates, cfg.top_k)
     answer = comp.generator.generate(query, candidates)
-    if version is not None and any(not candidate.chunk.is_current for candidate in candidates):
-        answer = answer.model_copy(
-            update={"text": f"【历史版本：{version}】\n{answer.text}"}
-        )
     if session_id and comp.coreference is not None:
         comp.conversation_store.append(session_id, retrieval_question)
     return QueryExecution(answer, candidates, retrieval_question)
@@ -352,6 +372,16 @@ def query(
         )
     answer = result.answer
     typer.echo(answer.text)
+    if answer.citations:
+        used_ids = set(answer.retrieved_chunk_ids)
+        used_contexts = [
+            candidate
+            for candidate in result.candidates
+            if candidate.chunk.chunk_id in used_ids
+        ]
+        typer.echo("\n引用来源：")
+        for index, citation in enumerate(answer.citations, start=1):
+            typer.echo(f"[{index}] {_format_citation(citation, used_contexts)}")
     if answer.retrieved_chunk_ids:
         typer.echo(f"\n[命中 {len(answer.retrieved_chunk_ids)} 个 chunk]")
     if show_hits:
