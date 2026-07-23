@@ -44,6 +44,13 @@ routing:
   enabled: true
   impl: llm               # 指代消解后、权限过滤和检索前执行 LLM 路由
 
+reflection:
+  enabled: true
+  impl: score_threshold   # 使用真实 reranker 的相关性分数判断召回质量
+  max_retries: 1          # 首次检索后最多改写并重检一次
+  min_candidates: 1
+  min_score: 0.5          # 首版默认值，后续通过 v0.5 评测调优
+
 governance:
   permissions_enabled: true
   permission_filter: acl

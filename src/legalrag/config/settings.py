@@ -104,6 +104,15 @@ class RoutingCfg(BaseModel):
     impl: str = "llm"
 
 
+class ReflectionCfg(BaseModel):
+    model_config = {"extra": "allow"}
+    enabled: bool = False
+    impl: str = "score_threshold"
+    max_retries: int = Field(default=1, ge=0)
+    min_candidates: int = Field(default=1, ge=1)
+    min_score: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
 class AclPolicyCfg(BaseModel):
     role: str
     allowed_confidentiality: list[Confidentiality]
@@ -173,6 +182,7 @@ class AppConfig(BaseModel):
     llm: LLMCfg = Field(default_factory=LLMCfg)
     conversation: ConversationCfg = Field(default_factory=ConversationCfg)
     routing: RoutingCfg = Field(default_factory=RoutingCfg)
+    reflection: ReflectionCfg = Field(default_factory=ReflectionCfg)
     governance: GovernanceCfg = Field(default_factory=GovernanceCfg)
 
 

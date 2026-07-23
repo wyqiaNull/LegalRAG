@@ -129,6 +129,15 @@ class Components:
         self.router = None
         if cfg.routing.enabled:
             self.router = _build("router", cfg.routing.impl, llm=self.llm)
+        self.reflector = None
+        if cfg.reflection.enabled:
+            self.reflector = _build(
+                "reflector",
+                cfg.reflection.impl,
+                llm=self.llm,
+                min_candidates=cfg.reflection.min_candidates,
+                min_score=cfg.reflection.min_score,
+            )
         self.query_orchestrator = AgentOrchestrator(
             retriever=self.retriever,
             reranker=self.reranker,
@@ -140,6 +149,8 @@ class Components:
             version_filter=self.version_filter,
             coreference=self.coreference,
             conversation_store=self.conversation_store,
+            reflector=self.reflector,
+            max_retries=cfg.reflection.max_retries,
         )
 
     def pipeline(self) -> IngestPipeline:
@@ -372,6 +383,10 @@ def query(
         typer.echo(f"[路由] {answer.route.value}")
         if result.retrieval_question != text:
             typer.echo(f"[独立检索问题] {result.retrieval_question}")
+        if len(result.retrieval_attempts) > 1:
+            typer.echo(f"[反思重试] {len(result.retrieval_attempts) - 1} 次")
+            for index, question in enumerate(result.retrieval_attempts[1:], start=1):
+                typer.echo(f"[改写检索问题 {index}] {question}")
         for rank, candidate in enumerate(result.candidates, start=1):
             chunk = candidate.chunk
             location = f"《{chunk.doc_name}》 {chunk.clause_no}".strip()

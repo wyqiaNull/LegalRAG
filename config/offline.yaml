@@ -43,6 +43,13 @@ routing:
   enabled: false          # echo 不具备分类能力，保持离线 RAG 冒烟链路
   impl: llm
 
+reflection:
+  enabled: false          # noop/fusion 分数未经校准，不参与质量门槛判断
+  impl: score_threshold
+  max_retries: 1
+  min_candidates: 1
+  min_score: 0.5
+
 governance:
   permissions_enabled: false
   permission_filter: acl

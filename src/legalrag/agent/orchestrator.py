@@ -1,4 +1,4 @@
-"""Agentic 查询编排：指代消解、检索前路由与正常 RAG 链路。"""
+"""Agentic 查询编排：指代消解、检索前路由、反思改写与正常 RAG 链路。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Protocol
 from ..core.interfaces import (
     Generator,
     PermissionFilter,
+    Reflector,
     Reranker,
     Retriever,
     Router,
@@ -32,6 +33,7 @@ class QueryExecution:
     answer: Answer
     candidates: list[Candidate]
     retrieval_question: str
+    retrieval_attempts: tuple[str, ...] = ()
 
 
 _CHITCHAT_ANSWER = Answer(
@@ -60,6 +62,8 @@ class AgentOrchestrator:
         coreference: CoreferenceResolver | None = None,
         conversation_store: ConversationStore | None = None,
         refusal_responder: RefusalResponder | None = None,
+        reflector: Reflector | None = None,
+        max_retries: int = 1,
     ) -> None:
         self.retriever = retriever
         self.reranker = reranker
@@ -72,6 +76,8 @@ class AgentOrchestrator:
         self.coreference = coreference
         self.conversation_store = conversation_store
         self.refusal_responder = refusal_responder or RefusalResponder()
+        self.reflector = reflector
+        self.max_retries = max_retries
 
     def run(
         self,
@@ -119,8 +125,36 @@ class AgentOrchestrator:
             if version is not None:
                 filters["version"] = version
 
-        candidates = self.retriever.search(query, filters or None, self.top_n)
-        candidates = self.reranker.rerank(query, candidates, self.top_k)
+        attempts = [query.text]
+        retries = 0
+        while True:
+            candidates = self.retriever.search(query, filters or None, self.top_n)
+            candidates = self.reranker.rerank(query, candidates, self.top_k)
+            if self.reflector is None or not self.reflector.should_retry(candidates):
+                break
+            if retries >= self.max_retries:
+                return QueryExecution(
+                    answer=self.refusal_responder.refuse(
+                        RefusalReason.NO_ACCESSIBLE_CONTEXT
+                    ),
+                    candidates=candidates,
+                    retrieval_question=retrieval_question,
+                    retrieval_attempts=tuple(attempts),
+                )
+            rewritten = self.reflector.rewrite(query)
+            if rewritten.text.strip() == query.text.strip():
+                return QueryExecution(
+                    answer=self.refusal_responder.refuse(
+                        RefusalReason.NO_ACCESSIBLE_CONTEXT
+                    ),
+                    candidates=candidates,
+                    retrieval_question=retrieval_question,
+                    retrieval_attempts=tuple(attempts),
+                )
+            query = rewritten
+            attempts.append(query.text)
+            retries += 1
+
         if not candidates:
             return QueryExecution(
                 answer=self.refusal_responder.refuse(
@@ -128,8 +162,9 @@ class AgentOrchestrator:
                 ),
                 candidates=[],
                 retrieval_question=retrieval_question,
+                retrieval_attempts=tuple(attempts),
             )
         answer = self.generator.generate(query, candidates)
         if session_id and self.coreference is not None and self.conversation_store is not None:
             self.conversation_store.append(session_id, retrieval_question)
-        return QueryExecution(answer, candidates, retrieval_question)
+        return QueryExecution(answer, candidates, retrieval_question, tuple(attempts))
