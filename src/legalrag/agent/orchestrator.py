@@ -91,13 +91,17 @@ class AgentOrchestrator:
             history = self.conversation_store.get(query_identity, session_id)
             retrieval_question = self.coreference.resolve(text, history)
 
-        query = Query(
+        original_query = Query(
             text=retrieval_question,
             session_id=session_id,
             identity=query_identity,
             top_k=self.top_k,
         )
-        route = self.router.route(query) if self.router is not None else Route.NORMAL
+        route = (
+            self.router.route(original_query)
+            if self.router is not None
+            else Route.NORMAL
+        )
         if route is Route.CHITCHAT:
             return QueryExecution(
                 answer=_CHITCHAT_ANSWER.model_copy(deep=True),
@@ -115,17 +119,22 @@ class AgentOrchestrator:
 
         filters: dict[str, object] = {}
         if self.permission_filter is not None:
-            filters.update(self.permission_filter.build(query.identity))
+            filters.update(self.permission_filter.build(original_query.identity))
         if self.version_filter is not None:
             filters.update(self.version_filter.build(only_current=version is None))
             if version is not None:
                 filters["version"] = version
 
-        attempts = [query.text]
+        retrieval_query = original_query
+        attempts = [retrieval_query.text]
         retries = 0
         while True:
-            candidates = self.retriever.search(query, filters or None, self.top_n)
-            candidates = self.reranker.rerank(query, candidates, self.top_k)
+            candidates = self.retriever.search(
+                retrieval_query, filters or None, self.top_n
+            )
+            candidates = self.reranker.rerank(
+                retrieval_query, candidates, self.top_k
+            )
             if self.reflector is None or not self.reflector.should_retry(candidates):
                 break
             if retries >= self.max_retries:
@@ -137,8 +146,8 @@ class AgentOrchestrator:
                     retrieval_question=retrieval_question,
                     retrieval_attempts=tuple(attempts),
                 )
-            rewritten = self.reflector.rewrite(query)
-            if rewritten.text.strip() == query.text.strip():
+            rewritten = self.reflector.rewrite(retrieval_query)
+            if rewritten.text.strip() == retrieval_query.text.strip():
                 return QueryExecution(
                     answer=self.refusal_responder.refuse(
                         RefusalReason.NO_ACCESSIBLE_CONTEXT
@@ -147,8 +156,8 @@ class AgentOrchestrator:
                     retrieval_question=retrieval_question,
                     retrieval_attempts=tuple(attempts),
                 )
-            query = rewritten
-            attempts.append(query.text)
+            retrieval_query = rewritten
+            attempts.append(retrieval_query.text)
             retries += 1
 
         if not candidates:
@@ -160,7 +169,9 @@ class AgentOrchestrator:
                 retrieval_question=retrieval_question,
                 retrieval_attempts=tuple(attempts),
             )
-        answer = self.generator.generate(query, candidates)
+        answer = self.generator.generate(original_query, candidates)
         if session_id and self.coreference is not None and self.conversation_store is not None:
-            self.conversation_store.append(query.identity, session_id, retrieval_question)
+            self.conversation_store.append(
+                original_query.identity, session_id, retrieval_question
+            )
         return QueryExecution(answer, candidates, retrieval_question, tuple(attempts))
