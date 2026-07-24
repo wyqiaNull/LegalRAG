@@ -36,7 +36,10 @@ llm:
 conversation:
   enabled: false          # echo 不具备指代改写能力
   resolver: llm
+  store: json
   history_turns: 4
+  ttl_seconds: 604800
+  key_prefix: legalrag:conversation
   path: ""
 
 routing:

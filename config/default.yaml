@@ -37,8 +37,11 @@ llm:
 conversation:
   enabled: true
   resolver: llm
+  store: redis
   history_turns: 4
-  path: ""                # 留空时使用 <store.path>/conversations.json
+  ttl_seconds: 604800      # 7 天；每次成功问答后刷新
+  key_prefix: legalrag:conversation
+  path: ""                # JSON 实现使用；留空时为 <store.path>/conversations.json
 
 routing:
   enabled: true

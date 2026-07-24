@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ..core.interfaces import (
+    ConversationStore,
     Generator,
     PermissionFilter,
     Reflector,
@@ -20,12 +21,6 @@ from .refusal import RefusalReason, RefusalResponder
 
 class CoreferenceResolver(Protocol):
     def resolve(self, question: str, history: list[str]) -> str: ...
-
-
-class ConversationStore(Protocol):
-    def get(self, session_id: str) -> list[str]: ...
-
-    def append(self, session_id: str, standalone_question: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -86,19 +81,20 @@ class AgentOrchestrator:
         identity: Identity | None = None,
         version: str | None = None,
     ) -> QueryExecution:
+        query_identity = identity or Identity()
         retrieval_question = text
         if (
             session_id
             and self.coreference is not None
             and self.conversation_store is not None
         ):
-            history = self.conversation_store.get(session_id)
+            history = self.conversation_store.get(query_identity, session_id)
             retrieval_question = self.coreference.resolve(text, history)
 
         query = Query(
             text=retrieval_question,
             session_id=session_id,
-            identity=identity or Identity(),
+            identity=query_identity,
             top_k=self.top_k,
         )
         route = self.router.route(query) if self.router is not None else Route.NORMAL
@@ -166,5 +162,5 @@ class AgentOrchestrator:
             )
         answer = self.generator.generate(query, candidates)
         if session_id and self.coreference is not None and self.conversation_store is not None:
-            self.conversation_store.append(session_id, retrieval_question)
+            self.conversation_store.append(query.identity, session_id, retrieval_question)
         return QueryExecution(answer, candidates, retrieval_question, tuple(attempts))

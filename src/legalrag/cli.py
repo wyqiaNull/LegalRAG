@@ -15,7 +15,6 @@ import typer
 
 from . import agent, embedding, generation, llm, rerank, retrieval, store  # noqa: F401
 from .agent.orchestrator import AgentOrchestrator, QueryExecution
-from .agent.session import JsonConversationStore
 from .config.settings import Settings, load_settings
 from .core import registry
 from .core.errors import ConfigError
@@ -113,6 +112,7 @@ class Components:
             rrf_k=cfg.retrieval.rrf_k,
         )
         self.coreference = None
+        self.conversation_store = None
         if cfg.conversation.enabled:
             self.coreference = _build(
                 "coreference",
@@ -120,12 +120,18 @@ class Components:
                 llm=self.llm,
                 history_turns=cfg.conversation.history_turns,
             )
-        conversation_path = cfg.conversation.path or str(
-            Path(cfg.store.path) / "conversations.json"
-        )
-        self.conversation_store = JsonConversationStore(
-            conversation_path, cfg.conversation.history_turns
-        )
+            conversation_path = cfg.conversation.path or str(
+                Path(cfg.store.path) / "conversations.json"
+            )
+            self.conversation_store = _build(
+                "conversation_store",
+                cfg.conversation.store,
+                path=conversation_path,
+                url=sec.redis_url,
+                history_turns=cfg.conversation.history_turns,
+                ttl_seconds=cfg.conversation.ttl_seconds,
+                key_prefix=cfg.conversation.key_prefix,
+            )
         self.router = None
         if cfg.routing.enabled:
             self.router = _build("router", cfg.routing.impl, llm=self.llm)

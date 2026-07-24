@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -36,6 +37,9 @@ class Secrets(BaseSettings):
 
     postgres_dsn: str = ""
     legalrag_test_postgres_dsn: str = ""
+
+    redis_url: str = ""
+    legalrag_test_redis_url: str = ""
 
     legalrag_config: str = "config/default.yaml"
 
@@ -94,8 +98,19 @@ class ConversationCfg(BaseModel):
     model_config = {"extra": "allow"}
     enabled: bool = True
     resolver: str = "llm"
-    history_turns: int = 4
+    store: Literal["json", "redis"] = "json"
+    history_turns: int = Field(default=4, ge=1)
+    ttl_seconds: int = Field(default=604800, ge=1)
+    key_prefix: str = "legalrag:conversation"
     path: str = ""
+
+    @field_validator("key_prefix")
+    @classmethod
+    def validate_key_prefix(cls, value: str) -> str:
+        normalized = value.strip().strip(":")
+        if not normalized:
+            raise ValueError("key_prefix 不能为空")
+        return normalized
 
 
 class RoutingCfg(BaseModel):

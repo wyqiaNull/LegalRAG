@@ -156,3 +156,18 @@ class Reflector(ABC):  # v0.3
 
     @abstractmethod
     def rewrite(self, query: Query) -> Query: ...
+
+
+class ConversationStore(ABC):  # v0.3
+    """按请求身份隔离的多轮会话历史存储。"""
+
+    @abstractmethod
+    def get(self, identity: Identity, session_id: str) -> list[str]: ...
+
+    @abstractmethod
+    def append(
+        self,
+        identity: Identity,
+        session_id: str,
+        standalone_question: str,
+    ) -> None: ...
