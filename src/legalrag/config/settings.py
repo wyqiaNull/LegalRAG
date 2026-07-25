@@ -35,6 +35,10 @@ class Secrets(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "qwen2.5-7b-instruct"
 
+    eval_llm_api_base: str = ""
+    eval_llm_api_key: str = ""
+    eval_llm_model: str = ""
+
     postgres_dsn: str = ""
     legalrag_test_postgres_dsn: str = ""
 
@@ -87,6 +91,7 @@ class GenerationCfg(BaseModel):
     model_config = {"extra": "allow"}
     impl: str = "default"
     max_context_chunks: int = 5
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
 
 
 class LLMCfg(BaseModel):

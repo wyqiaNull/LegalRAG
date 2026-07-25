@@ -30,6 +30,7 @@ rerank:
 generation:
   impl: default
   max_context_chunks: 5
+  temperature: 0.2
 
 llm:
   impl: openai            # OpenAI 兼容 API（如 Qwen/DeepSeek）；离线/测试可切 echo

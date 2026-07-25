@@ -27,3 +27,6 @@ data/processed/*
 # 本地向量/元数据落盘
 *.db
 *.sqlite3
+
+# 评测原始调用、缓存与开源 benchmark 下载
+artifacts/eval/

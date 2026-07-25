@@ -24,6 +24,10 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.5",
 ]
+eval = [
+    "langchain-openai>=0.3,<0.4",
+    "ragas==0.3.9",
+]
 
 [project.scripts]
 legalrag = "legalrag.cli:app"

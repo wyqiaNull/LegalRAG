@@ -29,6 +29,7 @@ rerank:
 generation:
   impl: default
   max_context_chunks: 3
+  temperature: 0.2
 
 llm:
   impl: echo              # 占位回显，不产真实法律意见

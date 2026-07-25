@@ -29,6 +29,14 @@ class QueryExecution:
     candidates: list[Candidate]
     retrieval_question: str
     retrieval_attempts: tuple[str, ...] = ()
+    retrieval_signals: tuple["RetrievalSignal", ...] = ()
+
+
+@dataclass(frozen=True)
+class RetrievalSignal:
+    question: str
+    candidate_count: int
+    top_score: float | None
 
 
 _CHITCHAT_ANSWER = Answer(
@@ -127,6 +135,7 @@ class AgentOrchestrator:
 
         retrieval_query = original_query
         attempts = [retrieval_query.text]
+        signals: list[RetrievalSignal] = []
         retries = 0
         while True:
             candidates = self.retriever.search(
@@ -134,6 +143,13 @@ class AgentOrchestrator:
             )
             candidates = self.reranker.rerank(
                 retrieval_query, candidates, self.top_k
+            )
+            signals.append(
+                RetrievalSignal(
+                    question=retrieval_query.text,
+                    candidate_count=len(candidates),
+                    top_score=max((candidate.score for candidate in candidates), default=None),
+                )
             )
             if self.reflector is None or not self.reflector.should_retry(candidates):
                 break
@@ -145,6 +161,7 @@ class AgentOrchestrator:
                     candidates=candidates,
                     retrieval_question=retrieval_question,
                     retrieval_attempts=tuple(attempts),
+                    retrieval_signals=tuple(signals),
                 )
             rewritten = self.reflector.rewrite(retrieval_query)
             if rewritten.text.strip() == retrieval_query.text.strip():
@@ -155,6 +172,7 @@ class AgentOrchestrator:
                     candidates=candidates,
                     retrieval_question=retrieval_question,
                     retrieval_attempts=tuple(attempts),
+                    retrieval_signals=tuple(signals),
                 )
             retrieval_query = rewritten
             attempts.append(retrieval_query.text)
@@ -168,10 +186,17 @@ class AgentOrchestrator:
                 candidates=[],
                 retrieval_question=retrieval_question,
                 retrieval_attempts=tuple(attempts),
+                retrieval_signals=tuple(signals),
             )
         answer = self.generator.generate(original_query, candidates)
         if session_id and self.coreference is not None and self.conversation_store is not None:
             self.conversation_store.append(
                 original_query.identity, session_id, retrieval_question
             )
-        return QueryExecution(answer, candidates, retrieval_question, tuple(attempts))
+        return QueryExecution(
+            answer,
+            candidates,
+            retrieval_question,
+            tuple(attempts),
+            tuple(signals),
+        )

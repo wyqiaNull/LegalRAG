@@ -103,6 +103,7 @@ class Components:
             cfg.generation.impl,
             llm=self.llm,
             max_context_chunks=cfg.generation.max_context_chunks,
+            temperature=cfg.generation.temperature,
         )
         self.retriever = _build(
             "retriever",
@@ -426,6 +427,11 @@ def chunk_stats(
     )
     _print_summary("法条 chunk", stats.clause_chunks)
     _print_summary("全部 chunk", stats.all_chunks)
+
+
+from .eval.cli import register as _register_eval  # noqa: E402
+
+_register_eval(app)
 
 
 if __name__ == "__main__":

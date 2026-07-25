@@ -31,9 +31,15 @@ def _format_context(contexts: list[Candidate]) -> str:
 
 
 class DefaultGenerator(Generator):
-    def __init__(self, llm: LLMClient, max_context_chunks: int = 5) -> None:
+    def __init__(
+        self,
+        llm: LLMClient,
+        max_context_chunks: int = 5,
+        temperature: float = 0.2,
+    ) -> None:
         self.llm = llm
         self.max_context_chunks = max_context_chunks
+        self.temperature = temperature
         self.template = _PROMPT_FILE.read_text(encoding="utf-8")
 
     def generate(self, query: Query, contexts: list[Candidate]) -> Answer:
@@ -41,7 +47,7 @@ class DefaultGenerator(Generator):
         prompt = self.template.format(
             context=_format_context(used), question=query.text
         )
-        text = self.llm.complete(prompt)
+        text = self.llm.complete(prompt, temperature=self.temperature)
         versions = historical_versions(used)
         if versions:
             text = f"【历史版本：{'、'.join(versions)}】\n{text}"

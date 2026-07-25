@@ -1,4 +1,16 @@
-"""评估体系。
+"""LegalRAG evaluation harness."""
 
-TODO[v0.5]：ragas 接入 + 自建 gold + 消融 runner + 红队；数值必须标来源。
-"""
+from .dataset import dataset_sha256, load_cases, validate_review
+from .metrics import evaluate_deterministic_metrics
+from .models import EvalCase, EvalObservation, EvalTurn, GoldCitation
+
+__all__ = [
+    "EvalCase",
+    "EvalObservation",
+    "EvalTurn",
+    "GoldCitation",
+    "dataset_sha256",
+    "evaluate_deterministic_metrics",
+    "load_cases",
+    "validate_review",
+]
