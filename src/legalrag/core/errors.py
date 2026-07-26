@@ -32,3 +32,7 @@ class RetrievalError(LegalRAGError):
 
 class GenerationError(LegalRAGError):
     """生成阶段错误（LLM 调用失败等）。"""
+
+
+class ContractReviewError(LegalRAGError):
+    """合同审查输入、模型输出或编排过程无效。"""

@@ -1,4 +1,24 @@
-"""合同审查子功能（v0.4 引入，可选）。
+"""劳动合同逐条款审查能力。"""
 
-TODO[v0.4]：单一合同类型，草稿作为 query 上传（不入库）→ 逐条款反查法规 → 合规报告。
-"""
+from .evaluation import evaluate_contract_report, load_contract_gold
+from .models import (
+    ClauseCategory,
+    ClauseCompliance,
+    ContractGold,
+    ContractReviewMetrics,
+    ContractReviewReport,
+    ContractType,
+)
+from .reviewer import ContractReviewer
+
+__all__ = [
+    "ClauseCategory",
+    "ClauseCompliance",
+    "ContractGold",
+    "ContractReviewMetrics",
+    "ContractReviewReport",
+    "ContractReviewer",
+    "ContractType",
+    "evaluate_contract_report",
+    "load_contract_gold",
+]

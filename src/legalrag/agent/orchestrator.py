@@ -47,7 +47,7 @@ _CHITCHAT_ANSWER = Answer(
 _ROUTE_REFUSALS: dict[Route, RefusalReason] = {
     Route.OUT_OF_SCOPE: RefusalReason.OUT_OF_SCOPE,
     Route.NEED_CLARIFY: RefusalReason.INSUFFICIENT_INFORMATION,
-    Route.CONTRACT_REVIEW: RefusalReason.CONTRACT_REVIEW_UNAVAILABLE,
+    Route.CONTRACT_REVIEW: RefusalReason.CONTRACT_FILE_REQUIRED,
 }
 
 

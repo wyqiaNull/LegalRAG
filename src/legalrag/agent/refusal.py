@@ -13,7 +13,7 @@ class RefusalReason(str, Enum):
     OUT_OF_SCOPE = "out_of_scope"
     INSUFFICIENT_INFORMATION = "insufficient_information"
     NO_ACCESSIBLE_CONTEXT = "no_accessible_context"
-    CONTRACT_REVIEW_UNAVAILABLE = "contract_review_unavailable"
+    CONTRACT_FILE_REQUIRED = "contract_file_required"
 
 
 _REFUSAL_TEXT: dict[RefusalReason, str] = {
@@ -24,8 +24,8 @@ _REFUSAL_TEXT: dict[RefusalReason, str] = {
     RefusalReason.NO_ACCESSIBLE_CONTEXT: (
         "未检索到您有权访问且足以支持回答的资料，无法提供可靠回答。"
     ),
-    RefusalReason.CONTRACT_REVIEW_UNAVAILABLE: (
-        "已识别为合同审查请求，当前版本尚未开放合同审查功能。"
+    RefusalReason.CONTRACT_FILE_REQUIRED: (
+        "已识别为合同审查请求。请使用 contract-review 命令上传劳动合同草稿。"
     ),
 }
 

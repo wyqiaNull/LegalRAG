@@ -55,6 +55,11 @@ reflection:
   min_candidates: 1
   min_score: 0.5          # 首版默认值，后续通过 v0.5 评测调优
 
+contract:
+  enabled: true
+  contract_type: labor    # v0.4 仅支持劳动合同
+  max_context_chunks: 5
+
 governance:
   permissions_enabled: true
   permission_filter: acl

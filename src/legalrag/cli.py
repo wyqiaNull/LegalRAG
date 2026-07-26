@@ -16,6 +16,13 @@ import typer
 from . import agent, embedding, generation, llm, rerank, retrieval, store  # noqa: F401
 from .agent.orchestrator import AgentOrchestrator, QueryExecution
 from .config.settings import Settings, load_settings
+from .contract import (
+    ContractReviewMetrics,
+    ContractReviewReport,
+    ContractReviewer,
+    evaluate_contract_report,
+    load_contract_gold,
+)
 from .core import registry
 from .core.errors import ConfigError
 from .core.models import (
@@ -159,6 +166,22 @@ class Components:
             reflector=self.reflector,
             max_retries=cfg.reflection.max_retries,
         )
+        self.contract_reviewer = None
+        if cfg.contract.enabled:
+            self.contract_reviewer = ContractReviewer(
+                loader=_build("loader", "auto"),
+                chunker=_build("chunker", "clause"),
+                llm=self.llm,
+                retriever=self.retriever,
+                reranker=self.reranker,
+                top_n=cfg.retrieval.top_n,
+                top_k=cfg.retrieval.top_k,
+                max_context_chunks=cfg.contract.max_context_chunks,
+                permission_filter=self.permission_filter,
+                version_filter=self.version_filter,
+                reflector=self.reflector,
+                max_retries=cfg.reflection.max_retries,
+            )
 
     def pipeline(self) -> IngestPipeline:
         loader = _build("loader", self.settings.config.ingest.loader)
@@ -242,6 +265,22 @@ def run_query(
     return run_query_details(text, settings, session_id, identity, version).answer
 
 
+def run_contract_review(
+    path: str,
+    settings: Settings | None = None,
+    identity: Identity | None = None,
+) -> ContractReviewReport:
+    settings = settings or load_settings()
+    if not settings.config.contract.enabled:
+        raise ConfigError("当前配置未启用合同审查")
+    if settings.config.governance.permissions_enabled and identity is None:
+        raise ConfigError("权限过滤启用时必须提供合同审查身份")
+    reviewer = Components(settings).contract_reviewer
+    if reviewer is None:
+        raise ConfigError("合同审查组件未初始化")
+    return reviewer.review(path, identity)
+
+
 def _input_documents(path: str) -> list[str]:
     target = Path(path)
     supported = {".pdf", ".docx", ".txt", ".md"}
@@ -261,6 +300,37 @@ def _print_summary(name: str, summary: LengthSummary) -> None:
         f"{name}: count={summary.count}, min={summary.minimum}, "
         f"max={summary.maximum}, avg={summary.average:.2f}, "
         f"median={summary.median:g}"
+    )
+
+
+def _print_contract_report(report: ContractReviewReport) -> None:
+    typer.echo(f"合同：{report.contract_name}（{report.contract_type.value}）")
+    for clause in report.clauses:
+        typer.echo(
+            f"\n{clause.clause_no} [{clause.category.value}] {clause.status.value}"
+        )
+        typer.echo(clause.content)
+        typer.echo(clause.reason)
+        if clause.citations:
+            typer.echo("引用来源：")
+            for index, citation in enumerate(clause.citations, start=1):
+                typer.echo(f"[{index}] {_format_citation(citation, [])}")
+    summary = report.summary
+    typer.echo(
+        f"\n汇总：total={summary.total} compliant={summary.compliant} "
+        f"risk={summary.risk} no_match={summary.no_match}"
+    )
+
+
+def _print_contract_metrics(metrics: ContractReviewMetrics) -> None:
+    typer.echo(
+        "合同 gold 指标"
+        f"（review_status={metrics.review_status}）："
+        f"status_accuracy={metrics.status_accuracy:.4f} "
+        f"citation_precision={metrics.citation_precision:.4f} "
+        f"citation_recall={metrics.citation_recall:.4f} "
+        f"missing={metrics.missing_clause_count} "
+        f"unexpected={metrics.unexpected_clause_count}"
     )
 
 
@@ -403,6 +473,57 @@ def query(
                 f"status={'current' if chunk.is_current else 'history'} "
                 f"chunk_id={chunk.chunk_id}"
             )
+
+
+@app.command("contract-review")
+def contract_review(
+    path: str = typer.Argument(..., help="待审劳动合同草稿（pdf/docx/txt）"),
+    config: str = typer.Option(None, "--config", "-c", help="配置文件路径"),
+    output: str | None = typer.Option(None, "--output", "-o", help="JSON 报告输出路径"),
+    gold: str | None = typer.Option(None, "--gold", help="可选的条款级 draft gold"),
+    user_id: str = typer.Option("anonymous", "--user-id", help="用户 ID"),
+    role: str | None = typer.Option(None, "--role", help="用户角色"),
+    tenant_id: str | None = typer.Option(None, "--tenant-id", help="所属租户"),
+    allowed_confidentiality: list[Confidentiality] = typer.Option(
+        [],
+        "--allowed-confidentiality",
+        help="进一步限制可见密级，可重复指定",
+    ),
+) -> None:
+    """上传劳动合同草稿并输出逐条款合规报告，草稿不会入库。"""
+    settings = load_settings(config)
+    permissions_enabled = settings.config.governance.permissions_enabled
+    if permissions_enabled and not role:
+        raise typer.BadParameter(
+            "权限过滤启用时必须提供用户角色", param_hint="--role"
+        )
+    if permissions_enabled and not tenant_id:
+        raise typer.BadParameter(
+            "权限过滤启用时必须提供所属租户", param_hint="--tenant-id"
+        )
+    identity = None
+    if role or tenant_id or allowed_confidentiality:
+        identity = Identity(
+            user_id=user_id,
+            role=role or "*",
+            tenant_id=tenant_id or "default",
+            allowed_confidentiality=(
+                list(dict.fromkeys(allowed_confidentiality))
+                if allowed_confidentiality
+                else list(Confidentiality)
+            ),
+        )
+    report = run_contract_review(path, settings, identity)
+    if output:
+        target = Path(output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"合同审查报告已写入：{target}")
+    else:
+        _print_contract_report(report)
+    if gold:
+        metrics = evaluate_contract_report(report, load_contract_gold(gold))
+        _print_contract_metrics(metrics)
 
 
 @app.command("chunk-stats")

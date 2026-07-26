@@ -54,6 +54,11 @@ reflection:
   min_candidates: 1
   min_score: 0.5
 
+contract:
+  enabled: false          # echo LLM 无法产出结构化合同审查结论
+  contract_type: labor
+  max_context_chunks: 3
+
 governance:
   permissions_enabled: false
   permission_filter: acl

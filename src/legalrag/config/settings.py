@@ -133,6 +133,13 @@ class ReflectionCfg(BaseModel):
     min_score: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+class ContractCfg(BaseModel):
+    model_config = {"extra": "allow"}
+    enabled: bool = False
+    contract_type: Literal["labor"] = "labor"
+    max_context_chunks: int = Field(default=5, ge=1)
+
+
 class AclPolicyCfg(BaseModel):
     role: str
     allowed_confidentiality: list[Confidentiality]
@@ -203,6 +210,7 @@ class AppConfig(BaseModel):
     conversation: ConversationCfg = Field(default_factory=ConversationCfg)
     routing: RoutingCfg = Field(default_factory=RoutingCfg)
     reflection: ReflectionCfg = Field(default_factory=ReflectionCfg)
+    contract: ContractCfg = Field(default_factory=ContractCfg)
     governance: GovernanceCfg = Field(default_factory=GovernanceCfg)
 
 
