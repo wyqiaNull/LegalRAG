@@ -1,4 +1,5 @@
-"""接口层 —— FastAPI 服务。
+"""LegalRAG REST API。"""
 
-TODO：app + routes(/ingest /query /feedback /admin) + JWT + 审计日志。
-"""
+from .app import app, create_app
+
+__all__ = ["app", "create_app"]

@@ -10,6 +10,7 @@ from ..core import registry
 from ..core.errors import ConfigError, RetrievalError
 from ..core.interfaces import Candidate, Reranker
 from ..core.models import CandidateSource, Query
+from ..observability import UsageCollector
 
 
 class BgeApiReranker(Reranker):
@@ -19,6 +20,7 @@ class BgeApiReranker(Reranker):
         api_key: str = "",
         model: str = "BAAI/bge-reranker-v2-m3",
         timeout: float = 30.0,
+        usage_collector: UsageCollector | None = None,
     ) -> None:
         if not api_base:
             raise ConfigError("bge_api 需配置 RERANK_API_BASE 或 EMBEDDING_API_BASE")
@@ -26,6 +28,7 @@ class BgeApiReranker(Reranker):
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.usage_collector = usage_collector
 
     def rerank(
         self, query: Query, candidates: list[Candidate], top_k: int
@@ -50,7 +53,10 @@ class BgeApiReranker(Reranker):
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            results = response.json()["results"]
+            body = response.json()
+            if self.usage_collector is not None:
+                self.usage_collector.record(body)
+            results = body["results"]
             reranked = [
                 candidates[int(item["index"])].model_copy(
                     update={

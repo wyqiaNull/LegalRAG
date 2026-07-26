@@ -6,27 +6,30 @@
 
 from __future__ import annotations
 
-import inspect
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import typer
 
-from . import agent, embedding, generation, llm, rerank, retrieval, store  # noqa: F401
-from .agent.orchestrator import AgentOrchestrator, QueryExecution
-from .config.settings import Settings, load_settings
+from .application import (
+    Components,
+    QueryExecution,
+    build_component,
+    run_contract_review,
+    run_ingest,
+    run_ingest_details,
+    run_query,
+    run_query_details,
+)
+from .config.settings import load_settings
 from .contract import (
     ContractReviewMetrics,
     ContractReviewReport,
-    ContractReviewer,
     evaluate_contract_report,
     load_contract_gold,
 )
-from .core import registry
-from .core.errors import ConfigError
 from .core.models import (
-    Answer,
     Candidate,
     Citation,
     Confidentiality,
@@ -34,176 +37,20 @@ from .core.models import (
     Identity,
 )
 from .generation.citation import is_historical_citation
-from .ingest import IngestPipeline, IngestResult  # 触发 ingest 包注册
 from .ingest.stats import LengthSummary, analyze_chunks
 
 app = typer.Typer(help="LegalRAG —— 企业级合同法规智能问答系统")
 
-
-def _build(kind: str, name: str, **candidates: Any) -> Any:
-    """按构造签名过滤 kwargs 后实例化 —— 让组装根无需知晓各实现的私有参数差异。"""
-    cls = registry.get(kind, name)
-    params = inspect.signature(cls.__init__).parameters
-    accepted = {k: v for k, v in candidates.items() if k in params}
-    return cls(**accepted)
-
-
-class Components:
-    """一次组装好的全套组件（供 ingest 与 query 复用）。"""
-
-    def __init__(self, settings: Settings) -> None:
-        cfg, sec = settings.config, settings.secrets
-        self.settings = settings
-
-        self.embedder = _build(
-            "embedder",
-            cfg.embedding.impl,
-            api_base=sec.embedding_api_base,
-            api_key=sec.embedding_api_key,
-            model=sec.embedding_model,
-            dim=cfg.embedding.dim,
-            batch_size=cfg.embedding.batch_size,
-        )
-        self.vector_store = _build("vector_store", cfg.store.vector, path=cfg.store.path)
-        self.metadata_store = _build(
-            "metadata_store",
-            cfg.store.metadata,
-            path=cfg.store.path,
-            dsn=sec.postgres_dsn,
-            acl_policies=[
-                policy.model_dump(mode="json")
-                for policy in cfg.governance.acl_policies
-            ],
-        )
-        self.permission_filter = None
-        if cfg.governance.permissions_enabled:
-            self.permission_filter = _build(
-                "permission_filter",
-                cfg.governance.permission_filter,
-                metadata_store=self.metadata_store,
-                shared_tenant_id=cfg.governance.shared_tenant_id,
-                shared_doc_types=cfg.governance.shared_doc_types,
-            )
-        self.version_filter = None
-        if cfg.governance.versions_enabled:
-            self.version_filter = _build(
-                "version_filter",
-                cfg.governance.version_filter,
-            )
-        self.llm = _build(
-            "llm",
-            cfg.llm.impl,
-            api_base=sec.llm_api_base,
-            api_key=sec.llm_api_key,
-            model=sec.llm_model,
-        )
-        self.reranker = _build(
-            "reranker",
-            cfg.rerank.impl,
-            api_base=sec.rerank_api_base or sec.embedding_api_base,
-            api_key=sec.rerank_api_key or sec.embedding_api_key,
-            model=sec.rerank_model,
-            timeout=cfg.rerank.timeout,
-        )
-        self.generator = _build(
-            "generator",
-            cfg.generation.impl,
-            llm=self.llm,
-            max_context_chunks=cfg.generation.max_context_chunks,
-            temperature=cfg.generation.temperature,
-        )
-        self.retriever = _build(
-            "retriever",
-            cfg.retrieval.impl,
-            embedder=self.embedder,
-            vector_store=self.vector_store,
-            rrf_k=cfg.retrieval.rrf_k,
-        )
-        self.coreference = None
-        self.conversation_store = None
-        if cfg.conversation.enabled:
-            self.coreference = _build(
-                "coreference",
-                cfg.conversation.resolver,
-                llm=self.llm,
-                history_turns=cfg.conversation.history_turns,
-            )
-            conversation_path = cfg.conversation.path or str(
-                Path(cfg.store.path) / "conversations.json"
-            )
-            self.conversation_store = _build(
-                "conversation_store",
-                cfg.conversation.store,
-                path=conversation_path,
-                url=sec.redis_url,
-                history_turns=cfg.conversation.history_turns,
-                ttl_seconds=cfg.conversation.ttl_seconds,
-                key_prefix=cfg.conversation.key_prefix,
-            )
-        self.router = None
-        if cfg.routing.enabled:
-            self.router = _build("router", cfg.routing.impl, llm=self.llm)
-        self.reflector = None
-        if cfg.reflection.enabled:
-            self.reflector = _build(
-                "reflector",
-                cfg.reflection.impl,
-                llm=self.llm,
-                min_candidates=cfg.reflection.min_candidates,
-                min_score=cfg.reflection.min_score,
-            )
-        self.query_orchestrator = AgentOrchestrator(
-            retriever=self.retriever,
-            reranker=self.reranker,
-            generator=self.generator,
-            top_n=cfg.retrieval.top_n,
-            top_k=cfg.retrieval.top_k,
-            router=self.router,
-            permission_filter=self.permission_filter,
-            version_filter=self.version_filter,
-            coreference=self.coreference,
-            conversation_store=self.conversation_store,
-            reflector=self.reflector,
-            max_retries=cfg.reflection.max_retries,
-        )
-        self.contract_reviewer = None
-        if cfg.contract.enabled:
-            self.contract_reviewer = ContractReviewer(
-                loader=_build("loader", "auto"),
-                chunker=_build("chunker", "clause"),
-                llm=self.llm,
-                retriever=self.retriever,
-                reranker=self.reranker,
-                top_n=cfg.retrieval.top_n,
-                top_k=cfg.retrieval.top_k,
-                max_context_chunks=cfg.contract.max_context_chunks,
-                permission_filter=self.permission_filter,
-                version_filter=self.version_filter,
-                reflector=self.reflector,
-                max_retries=cfg.reflection.max_retries,
-            )
-
-    def pipeline(self) -> IngestPipeline:
-        loader = _build("loader", self.settings.config.ingest.loader)
-        chunker = _build(
-            "chunker",
-            self.settings.config.ingest.chunker,
-            chunk_size=self.settings.config.ingest.chunk_size,
-            chunk_overlap=self.settings.config.ingest.chunk_overlap,
-        )
-        return IngestPipeline(
-            loader,
-            chunker,
-            self.embedder,
-            self.vector_store,
-            self.metadata_store,
-            versions_enabled=self.settings.config.governance.versions_enabled,
-            shared_tenant_id=self.settings.config.governance.shared_tenant_id,
-            shared_doc_types=self.settings.config.governance.shared_doc_types,
-        )
-
-
-# ============ 可被测试直接调用的编排函数 ============
+__all__ = [
+    "Components",
+    "QueryExecution",
+    "app",
+    "run_contract_review",
+    "run_ingest",
+    "run_ingest_details",
+    "run_query",
+    "run_query_details",
+]
 
 
 def _format_citation(citation: Citation, contexts: list[Candidate]) -> str:
@@ -219,66 +66,6 @@ def _format_citation(citation: Citation, contexts: list[Candidate]) -> str:
         location += f"（{'；'.join(details)}）"
     page = f"第{citation.page}页" if citation.page is not None else "页码未知"
     return f"{location}，{page}"
-
-
-def run_ingest(path: str, settings: Settings | None = None, **doc_meta: Any) -> int:
-    settings = settings or load_settings()
-    comp = Components(settings)
-    chunks = comp.pipeline().run(path, **doc_meta)
-    return len(chunks)
-
-
-def run_ingest_details(
-    path: str, settings: Settings | None = None, **doc_meta: Any
-) -> IngestResult:
-    settings = settings or load_settings()
-    return Components(settings).pipeline().run_detailed(path, **doc_meta)
-
-
-def run_query_details(
-    text: str,
-    settings: Settings | None = None,
-    session_id: str | None = None,
-    identity: Identity | None = None,
-    version: str | None = None,
-) -> QueryExecution:
-    settings = settings or load_settings()
-    if settings.config.governance.permissions_enabled and identity is None:
-        raise ConfigError("权限过滤启用时必须提供查询身份")
-    if version is not None:
-        version = version.strip()
-        if not version:
-            raise ConfigError("显式查询的版本号不能为空")
-        if not settings.config.governance.versions_enabled:
-            raise ConfigError("当前配置未启用版本查询")
-    comp = Components(settings)
-    return comp.query_orchestrator.run(text, session_id, identity, version)
-
-
-def run_query(
-    text: str,
-    settings: Settings | None = None,
-    session_id: str | None = None,
-    identity: Identity | None = None,
-    version: str | None = None,
-) -> Answer:
-    return run_query_details(text, settings, session_id, identity, version).answer
-
-
-def run_contract_review(
-    path: str,
-    settings: Settings | None = None,
-    identity: Identity | None = None,
-) -> ContractReviewReport:
-    settings = settings or load_settings()
-    if not settings.config.contract.enabled:
-        raise ConfigError("当前配置未启用合同审查")
-    if settings.config.governance.permissions_enabled and identity is None:
-        raise ConfigError("权限过滤启用时必须提供合同审查身份")
-    reviewer = Components(settings).contract_reviewer
-    if reviewer is None:
-        raise ConfigError("合同审查组件未初始化")
-    return reviewer.review(path, identity)
 
 
 def _input_documents(path: str) -> list[str]:
@@ -533,8 +320,8 @@ def chunk_stats(
 ) -> None:
     """统计分块完整率及字符长度分布，不执行 embedding 或落库。"""
     settings = load_settings(config)
-    loader = _build("loader", settings.config.ingest.loader)
-    chunker = _build(
+    loader = build_component("loader", settings.config.ingest.loader)
+    chunker = build_component(
         "chunker",
         settings.config.ingest.chunker,
         chunk_size=settings.config.ingest.chunk_size,

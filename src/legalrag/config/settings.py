@@ -45,6 +45,17 @@ class Secrets(BaseSettings):
     redis_url: str = ""
     legalrag_test_redis_url: str = ""
 
+    milvus_uri: str = "http://127.0.0.1:19530"
+    milvus_token: str = ""
+    legalrag_test_milvus_uri: str = ""
+
+    celery_broker_url: str = ""
+    celery_result_backend: str = ""
+
+    jwt_secret_key: str = ""
+    jwt_issuer: str = "legalrag"
+    jwt_audience: str = "legalrag-api"
+
     legalrag_config: str = "config/default.yaml"
 
 
@@ -71,6 +82,7 @@ class StoreCfg(BaseModel):
     vector: str = "memory"
     metadata: str = "memory"
     path: str = "data/processed"
+    collection: str = "legalrag_chunks"
 
 
 class RetrievalCfg(BaseModel):
@@ -138,6 +150,15 @@ class ContractCfg(BaseModel):
     enabled: bool = False
     contract_type: Literal["labor"] = "labor"
     max_context_chunks: int = Field(default=5, ge=1)
+
+
+class ServiceCfg(BaseModel):
+    model_config = {"extra": "allow"}
+    upload_dir: str = "/tmp/legalrag-uploads"
+    max_upload_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    input_cost_per_million: float = Field(default=0.0, ge=0.0)
+    output_cost_per_million: float = Field(default=0.0, ge=0.0)
 
 
 class AclPolicyCfg(BaseModel):
@@ -211,6 +232,7 @@ class AppConfig(BaseModel):
     routing: RoutingCfg = Field(default_factory=RoutingCfg)
     reflection: ReflectionCfg = Field(default_factory=ReflectionCfg)
     contract: ContractCfg = Field(default_factory=ContractCfg)
+    service: ServiceCfg = Field(default_factory=ServiceCfg)
     governance: GovernanceCfg = Field(default_factory=GovernanceCfg)
 
 

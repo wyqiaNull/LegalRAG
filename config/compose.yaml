@@ -1,0 +1,86 @@
+# Docker Compose 确定性验收配置：验证服务、治理与存储，不代表模型质量。
+ingest:
+  loader: auto
+  chunker: clause
+  chunk_size: 512
+  chunk_overlap: 64
+
+embedding:
+  impl: local_hash
+  dim: 256
+  batch_size: 32
+
+store:
+  vector: milvus
+  metadata: postgres
+  path: data/processed
+  collection: legalrag_chunks
+
+retrieval:
+  impl: hybrid_rerank
+  top_n: 20
+  top_k: 5
+  rrf_k: 60
+
+rerank:
+  impl: noop
+
+generation:
+  impl: default
+  max_context_chunks: 5
+  temperature: 0.0
+
+llm:
+  impl: echo
+
+conversation:
+  enabled: false
+  resolver: llm
+  store: redis
+  history_turns: 4
+  ttl_seconds: 604800
+  key_prefix: legalrag:conversation
+
+routing:
+  enabled: false
+  impl: llm
+
+reflection:
+  enabled: false
+  impl: score_threshold
+  max_retries: 1
+  min_candidates: 1
+  min_score: 0.5
+
+contract:
+  enabled: false
+  contract_type: labor
+  max_context_chunks: 5
+
+service:
+  upload_dir: /var/lib/legalrag/uploads
+  max_upload_bytes: 20971520
+  jwt_algorithm: HS256
+  input_cost_per_million: 0
+  output_cost_per_million: 0
+
+governance:
+  permissions_enabled: true
+  permission_filter: acl
+  versions_enabled: true
+  version_filter: current
+  shared_tenant_id: __global__
+  shared_doc_types: [regulation]
+  acl_policies:
+    - role: legal_staff
+      allowed_confidentiality: [public, internal, secret]
+      allowed_doc_types: [regulation, policy, legal_opinion]
+    - role: business_user
+      allowed_confidentiality: [public, internal]
+      allowed_doc_types: [regulation, policy, legal_opinion]
+    - role: compliance_auditor
+      allowed_confidentiality: [public, internal, secret]
+      allowed_doc_types: [regulation, policy, legal_opinion]
+    - role: external_client
+      allowed_confidentiality: [public]
+      allowed_doc_types: [regulation, policy, legal_opinion]

@@ -13,9 +13,10 @@ embedding:
   batch_size: 32
 
 store:
-  vector: memory          # [MVP] 内存实现，接口与 Milvus 一致；量大再切
+  vector: milvus          # 生产服务使用 Milvus；离线和评测 profile 保留 memory
   metadata: postgres      # 元数据、访问策略与文档版本关系持久化
-  path: data/processed    # 内存实现落盘目录（跨 CLI 调用持久化）
+  path: data/processed    # memory profile 使用的落盘目录
+  collection: legalrag_chunks
 
 retrieval:
   impl: hybrid_rerank     # BM25 + dense 双路召回，经 RRF 融合
@@ -59,6 +60,13 @@ contract:
   enabled: true
   contract_type: labor    # v0.4 仅支持劳动合同
   max_context_chunks: 5
+
+service:
+  upload_dir: /tmp/legalrag-uploads
+  max_upload_bytes: 20971520
+  jwt_algorithm: HS256
+  input_cost_per_million: 0
+  output_cost_per_million: 0
 
 governance:
   permissions_enabled: true

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "legalrag"
-version = "0.1.0"
-description = "LegalRAG —— 企业级合同法规智能问答系统（渐进式 RAG，v0.1）"
+version = "1.0.0"
+description = "LegalRAG —— 企业级合同法规智能问答与合同审查服务"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
@@ -27,6 +27,15 @@ dev = [
 eval = [
     "langchain-openai>=0.3,<0.4",
     "ragas==0.3.9",
+]
+service = [
+    "anyio>=4.4,<4.10",
+    "celery[redis]>=5.4,<6",
+    "fastapi>=0.115,<0.116",
+    "pymilvus>=2.5,<2.6",
+    "pyjwt>=2.10,<3",
+    "python-multipart>=0.0.20,<1",
+    "uvicorn[standard]>=0.34,<1",
 ]
 
 [project.scripts]

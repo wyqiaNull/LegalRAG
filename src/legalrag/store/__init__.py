@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from . import metadata_store, postgres, vector_store  # noqa: F401 —— 触发注册副作用
+from . import metadata_store, milvus, postgres, vector_store  # noqa: F401

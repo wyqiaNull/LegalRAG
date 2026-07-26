@@ -9,6 +9,7 @@ import httpx
 from ..core import registry
 from ..core.errors import ConfigError, GenerationError
 from ..core.interfaces import LLMClient
+from ..observability import UsageCollector
 
 
 class OpenAIClient(LLMClient):
@@ -18,6 +19,7 @@ class OpenAIClient(LLMClient):
         api_key: str = "",
         model: str = "qwen2.5-7b-instruct",
         timeout: float = 60.0,
+        usage_collector: UsageCollector | None = None,
     ) -> None:
         if not api_base:
             raise ConfigError("openai 需配置 LLM_API_BASE")
@@ -25,6 +27,7 @@ class OpenAIClient(LLMClient):
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.usage_collector = usage_collector
 
     def complete(self, prompt: str, **opts: Any) -> str:
         headers = {"Content-Type": "application/json"}
@@ -43,7 +46,10 @@ class OpenAIClient(LLMClient):
                 timeout=self.timeout,
             )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            body = resp.json()
+            if self.usage_collector is not None:
+                self.usage_collector.record(body)
+            return body["choices"][0]["message"]["content"]
         except (httpx.HTTPError, KeyError, IndexError) as e:
             raise GenerationError(f"LLM API 调用失败：{e}") from e
 

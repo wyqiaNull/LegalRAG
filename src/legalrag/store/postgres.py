@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS documents (
     effective_date DATE,
     is_current BOOLEAN NOT NULL DEFAULT TRUE,
     superseded_by TEXT,
+    deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 )
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     page INTEGER,
     content TEXT NOT NULL,
     content_hash TEXT NOT NULL,
+    deleted_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -64,6 +66,13 @@ CREATE TABLE IF NOT EXISTS acl_policies (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 )
 """
+
+_DOCUMENT_DELETED_DDL = (
+    "ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"
+)
+_CHUNK_DELETED_DDL = (
+    "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"
+)
 
 _DOCUMENT_VERSION_INDEX = """
 CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_family_version
@@ -194,6 +203,8 @@ class PostgresMetadataStore(MetadataStore):
                 cur.execute(_DOCUMENTS_DDL)
                 cur.execute(_CHUNKS_DDL)
                 cur.execute(_ACL_DDL)
+                cur.execute(_DOCUMENT_DELETED_DDL)
+                cur.execute(_CHUNK_DELETED_DDL)
                 cur.execute(_DOCUMENT_VERSION_INDEX)
                 cur.execute(_CURRENT_DOCUMENT_INDEX)
                 if acl_policies:
@@ -254,6 +265,7 @@ class PostgresMetadataStore(MetadataStore):
                     FROM chunks
                     WHERE doc_name = %s AND tenant_id = %s
                       AND doc_type = %s AND is_current = TRUE
+                      AND deleted_at IS NULL
                     ORDER BY chunk_id
                     """,
                     (doc_name, tenant_id, doc_type),
@@ -277,6 +289,7 @@ class PostgresMetadataStore(MetadataStore):
                     FROM chunks
                     WHERE doc_name = %s AND tenant_id = %s
                       AND doc_type = %s AND version = %s
+                      AND deleted_at IS NULL
                     ORDER BY chunk_id
                     """,
                     (doc_name, tenant_id, doc_type, version),
@@ -303,6 +316,7 @@ class PostgresMetadataStore(MetadataStore):
                     SELECT doc_id FROM documents
                     WHERE doc_name = %s AND tenant_id = %s
                       AND doc_type = %s AND is_current = TRUE
+                      AND deleted_at IS NULL
                     FOR UPDATE
                     """,
                     (first.doc_name, first.tenant_id, first.doc_type.value),
