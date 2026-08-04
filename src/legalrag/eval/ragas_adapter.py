@@ -69,7 +69,8 @@ def _ragas_components(secrets: Secrets, *, with_embeddings: bool):
             api_key=secrets.eval_llm_api_key,
             model=secrets.eval_llm_model,
             temperature=0.0,
-        )
+        ),
+        bypass_n=True,
     )
     embeddings = None
     if with_embeddings:
