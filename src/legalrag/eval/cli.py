@@ -30,6 +30,15 @@ from .dataset import (
 )
 from .hard_checks import run_hard_checks
 from .matrix import matrix_evidence, validate_matrix
+from .open_benchmarks import (
+    DEFAULT_OPEN_BENCH_ROOT,
+    load_full_crud_rag,
+    load_full_ragtruth,
+    load_full_rgb,
+    open_benchmark_plan,
+    run_full_ragtruth,
+    run_generation_benchmark,
+)
 from .report import write_report
 from .ragas_adapter import score_benchmark_faithfulness
 from .runner import run_profile, summarize_profile
@@ -281,6 +290,57 @@ def report_command(
 ) -> None:
     write_report(summary, output, require_complete=complete)
     typer.echo(f"报告已生成：{output}")
+
+
+@eval_app.command("open-bench-plan")
+def open_benchmark_plan_command(
+    root: str = typer.Option(str(DEFAULT_OPEN_BENCH_ROOT), help="完整 benchmark 仓库根目录"),
+) -> None:
+    """核对三个完整开源 benchmark，并输出最低 API 调用量。"""
+    typer.echo(json.dumps(open_benchmark_plan(root), ensure_ascii=False, indent=2))
+
+
+@eval_app.command("open-bench-run")
+def open_benchmark_run_command(
+    benchmark: Literal["ragtruth", "rgb", "crud-rag"] = typer.Option(...),
+    config: str = typer.Option("config/eval/clause_hybrid_agentic.yaml"),
+    root: str = typer.Option(str(DEFAULT_OPEN_BENCH_ROOT)),
+    output: str = typer.Option("artifacts/eval/open-benchmarks"),
+    limit: int | None = typer.Option(None, min=1, help="仅用于低成本 smoke；空值运行全量"),
+    workers: int = typer.Option(1, min=1, max=16, help="并发 API 请求数"),
+    refresh: bool = typer.Option(False, help="丢弃该 benchmark 的已有 checkpoint"),
+) -> None:
+    """分别运行完整 RAGTruth、RGB 或 CRUD-RAG，支持逐样本断点续跑。"""
+    secrets = load_settings(config).secrets
+    target = Path(output) / benchmark
+    if benchmark == "ragtruth":
+        summary = run_full_ragtruth(
+            load_full_ragtruth(root),
+            secrets,
+            target,
+            limit=limit,
+            refresh=refresh,
+            workers=workers,
+        )
+    elif benchmark == "rgb":
+        summary = run_generation_benchmark(
+            load_full_rgb(root),
+            secrets,
+            target,
+            limit=limit,
+            refresh=refresh,
+            workers=workers,
+        )
+    else:
+        summary = run_generation_benchmark(
+            load_full_crud_rag(root),
+            secrets,
+            target,
+            limit=limit,
+            refresh=refresh,
+            workers=workers,
+        )
+    typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
 def register(parent: typer.Typer) -> None:
